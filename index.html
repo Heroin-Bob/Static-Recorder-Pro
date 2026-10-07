@@ -895,15 +895,54 @@ $('recStop').addEventListener('click', function () { Recorder.stop(); });
 
 /* ---------- Transcription flow ---------- */
 var _devicePromise = null;
+var _deviceLabel = '';
 function detectDevice() {
-  if (_devicePromise) return _devicePromise;   // cache: requestAdapter logs once, not per run
-  _devicePromise = (function () {
-    if (!navigator.gpu) return Promise.resolve('wasm');
-    return navigator.gpu.requestAdapter()
-      .then(function (a) { return a ? 'webgpu' : 'wasm'; })
-      .catch(function () { return 'wasm'; });
-  })();
+  if (_devicePromise) return _devicePromise;
+  _devicePromise = detectAdapter().then(function (adapter) {
+    if (adapter) {
+      // Chrome exposes adapter.info; older builds have requestAdapterInfo().
+      try {
+        var info = adapter.info || null;
+        var parts = [];
+        if (info) {
+          if (info.vendor) parts.push(info.vendor);
+          if (info.architecture) parts.push(info.architecture);
+          if (info.description && parts.length === 0) parts.push(info.description);
+        }
+        _deviceLabel = parts.join(' ').trim();
+      } catch (e) { _deviceLabel = ''; }
+      return 'webgpu';
+    }
+    _deviceLabel = '';
+    return 'wasm';
+  }).then(function (dev) {
+    if (dev !== 'webgpu') _devicePromise = null;  // don't cache failure: GPU process may not be ready yet
+    return dev;
+  });
   return _devicePromise;
+}
+
+/** Try several adapter requests (some Linux/Chrome builds return null for the
+ *  first request while the GPU process is still starting, or for one
+ *  powerPreference). Resolves with an adapter or null. */
+function detectAdapter() {
+  if (!navigator.gpu) return Promise.resolve(null);
+  var opts = [
+    { powerPreference: 'high-performance' },
+    { powerPreference: 'low-power' },
+    {}
+  ];
+  var i = 0;
+  function attempt() {
+    return navigator.gpu.requestAdapter(opts[i++]).then(function (a) {
+      if (a || i >= opts.length) return a;
+      return new Promise(function (r) { setTimeout(r, 500); }).then(attempt);
+    }).catch(function () {
+      if (i >= opts.length) return null;
+      return new Promise(function (r) { setTimeout(r, 500); }).then(attempt);
+    });
+  }
+  return attempt();
 }
 
 function formatLines(trackResults) {
@@ -1137,8 +1176,9 @@ var llmCurrentJob = null, llmJobSeq = 0;
 var llmUserPickedModel = false;
 
 function llmDeviceNoteText(device) {
+  var label = _deviceLabel ? ' [' + _deviceLabel + ']' : '';
   return device === 'webgpu'
-    ? 'WebGPU detected — generating with GPU acceleration.'
+    ? 'WebGPU detected' + label + ' — generating with GPU acceleration.'
     : 'No WebGPU detected in this browser — using CPU (WASM) mode. It is slower and memory-limited, so SmolLM2 360M/135M are the safest choices. The app automatically retries with a smaller model if loading runs out of memory.';
 }
 
@@ -1212,7 +1252,10 @@ function finishLLM(result) {
   updateLLMBtn();
   if (result === 'done') {
     var secs = (Date.now() - llmStartTs) / 1000;
-    llmSetStatus('Done — ' + llmTokens + ' tokens in ' + fmtElapsed(secs) + '. Generated locally in your browser; nothing was uploaded.', 'ok');
+    var tps = secs > 0 ? (llmTokens / secs).toFixed(1) : '?';
+    var dev = (llmCurrentJob && llmCurrentJob.device) || '?';
+    llmSetStatus('Done — ' + llmTokens + ' tokens in ' + fmtElapsed(secs) +
+      ' (~' + tps + ' tokens/sec, ' + dev + '). Generated locally in your browser; nothing was uploaded.', 'ok');
   } else if (result === 'cancelled') {
     llmSetStatus('Generation cancelled.' + ($('llmOut').value ? ' Partial output kept above.' : ''), '');
   }
@@ -1315,7 +1358,7 @@ function onLLMMessage(e) {
     else llmSetBar(d.progress, 'Downloading AI model... ' + d.progress + '%');
   } else if (d.type === 'generating') {
     llmSetBar(100, 'Generating... 0 tokens');
-    llmSetStatus('Model ready. Generating locally...', '');
+    llmSetStatus('Model ready (' + ((llmCurrentJob && llmCurrentJob.device) || '?') + '). Generating locally...', '');
   } else if (d.type === 'token') {
     appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
   } else if (d.type === 'complete') {

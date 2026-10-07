@@ -3,298 +3,839 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Static Recorder - Local Audio Recorder &amp; Transcriber</title>
-<meta name="description" content="Record your microphone and computer audio, then transcribe it entirely in your browser. Nothing is uploaded. Works by double-clicking this file (no server needed).">
+<title>Static Recorder Pro - Local Audio & AI Transcriber</title>
+<meta name="description" content="Record your microphone and system audio locally, transcribe with Whisper AI, and analyze calls using browser-native LLMs. 100% private, zero server.">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
+  :root {
+    --bg-dark: #090d16;
+    --bg-card: #131b2e;
+    --bg-card-hover: #1a243d;
+    --bg-input: #090d16;
+    --border-color: rgba(255, 255, 255, 0.08);
+    --border-color-glow: rgba(56, 189, 248, 0.25);
+    --accent-cyan: #38bdf8;
+    --accent-emerald: #22c55e;
+    --accent-purple: #a855f7;
+    --accent-amber: #f59e0b;
+    --accent-rose: #f43f5e;
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    --shadow-card: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 1px 1px rgba(255, 255, 255, 0.05);
+  }
+
   * { box-sizing: border-box; }
   body {
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    background: #0f172a; color: #e2e8f0; min-height: 100vh;
-    margin: 0; display: flex; align-items: flex-start; justify-content: center;
-    padding: 24px 12px;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: var(--bg-dark);
+    background-image: 
+      radial-gradient(at 20% 15%, rgba(56, 189, 248, 0.05) 0px, transparent 50%),
+      radial-gradient(at 80% 85%, rgba(168, 85, 247, 0.04) 0px, transparent 50%);
+    color: var(--text-main);
+    min-height: 100vh;
+    margin: 0;
+    padding: 0;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
   }
-  .card {
-    background: #1e293b; border-radius: 16px; padding: 32px;
-    max-width: 680px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,.4);
+
+  /* Sticky Top Header Navigation */
+  header.app-header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(9, 13, 22, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid var(--border-color);
+    padding: 12px 24px;
   }
-  h1 { margin: 0 0 6px; font-size: 1.6rem; color: #f8fafc; }
-  .sub { margin: 0 0 8px; font-size: .92rem; color: #cbd5e1; line-height: 1.55; }
-  .hint { font-size: .8rem; color: #94a3b8; margin-top: 4px; }
-  .elapsed { font-size: .85rem; color: #94a3b8; font-variant-numeric: tabular-nums; }
-  .tabs { display: flex; gap: 6px; margin: 18px 0 0; border-bottom: 1px solid #334155; }
+  .header-container {
+    max-width: 1380px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .brand-icon {
+    width: 38px;
+    height: 38px;
+    background: linear-gradient(135deg, #0284c7, #8b5cf6);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+  }
+  .brand-icon svg { width: 22px; height: 22px; fill: white; }
+  .brand-text h1 {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, #f8fafc 30%, #38bdf8 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .brand-text p {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  
+  .badges {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .badge {
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(30, 41, 59, 0.8);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-emerald);
+    box-shadow: 0 0 8px var(--accent-emerald);
+  }
+
+  /* Navigation Tabs */
+  .tabs {
+    display: flex;
+    background: rgba(19, 27, 46, 0.8);
+    padding: 4px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+  }
   .tab {
-    padding: 10px 16px; border-radius: 10px 10px 0 0; cursor: pointer;
-    background: #0f172a; color: #94a3b8; font-size: .9rem; font-weight: 600;
-    border: 1px solid transparent; border-bottom: none; user-select: none;
+    padding: 8px 18px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-size: 0.88rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .tab:hover { color: #e2e8f0; }
-  .tab.active { background: #1e293b; color: #38bdf8; border-color: #334155; }
-  .tab-pane { display: none; padding: 18px 0 4px; }
+  .tab:hover { color: var(--text-main); }
+  .tab.active {
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.15), rgba(139, 92, 246, 0.15));
+    color: var(--accent-cyan);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+
+  /* Layout Container */
+  .main-wrapper {
+    max-width: 1380px;
+    margin: 0 auto;
+    padding: 24px;
+  }
+
+  .tab-pane { display: none; }
   .tab-pane.active { display: block; }
-  .tab-divider { border-top: 1px solid #334155; margin: 20px 0 16px; }
-  .rec-ind { display: none; align-items: center; gap: 8px; margin: 12px 0; color: #f87171; font-weight: 700; }
-  .rec-ind .dot { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite; }
-  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
-  .meters { margin: 14px 0; }
-  .meter-row { margin: 8px 0; }
-  .meter-label { display: flex; justify-content: space-between; font-size: .82rem; color: #94a3b8; margin-bottom: 4px; }
-  .meter-track { height: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; overflow: hidden; }
-  .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #22d3ee, #38bdf8); border-radius: 6px; transition: width .05s linear; }
-  .rec-btns { display: flex; gap: 10px; }
-  .rec-btns button { flex: 1; }
+
+  /* Studio Dual Column Grid */
+  .studio-grid {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  @media (max-width: 1024px) {
+    .studio-grid { grid-template-columns: 1fr; }
+  }
+
+  /* Cards */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 20px 22px;
+    box-shadow: var(--shadow-card);
+    margin-bottom: 20px;
+    transition: border-color 0.2s ease;
+  }
+  .card:hover {
+    border-color: rgba(255, 255, 255, 0.12);
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .card-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-main);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title svg { width: 18px; height: 18px; fill: var(--accent-cyan); }
+  .card-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-top: -8px;
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  /* Recording Controls & Visualizer */
+  .rec-ind {
+    display: none;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(244, 63, 94, 0.1);
+    border: 1px solid rgba(244, 63, 94, 0.3);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 16px;
+    color: #fda4af;
+    font-weight: 600;
+    font-size: 0.9rem;
+  }
+  .rec-ind-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .rec-ind .dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent-rose);
+    box-shadow: 0 0 10px var(--accent-rose);
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.3; transform: scale(0.85); } }
+
+  .elapsed {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--text-main);
+    background: rgba(0, 0, 0, 0.3);
+    padding: 2px 8px;
+    border-radius: 6px;
+  }
+
+  .meters { margin: 16px 0; }
+  .meter-row { margin-bottom: 12px; }
+  .meter-label {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .meter-canvas {
+    display: block;
+    width: 100%;
+    height: 56px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  /* Buttons */
   button {
-    padding: 12px 14px; font-size: .95rem; border: none; border-radius: 10px;
-    cursor: pointer; font-weight: 700;
+    font-family: inherit;
+    padding: 10px 16px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
-  button:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
-  .btn-green { background: #22c55e; color: #052e16; }
-  .btn-green:hover:not(:disabled) { background: #4ade80; }
-  .btn-amber { background: #f59e0b; color: #431407; }
-  .btn-amber:hover:not(:disabled) { background: #fbbf24; }
-  .btn-red { background: #ef4444; color: #450a0a; }
-  .btn-red:hover:not(:disabled) { background: #f87171; }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(40%);
+  }
+
+  .btn-green {
+    background: linear-gradient(135deg, #16a34a, #15803d);
+    color: #f0fdf4;
+    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.25);
+  }
+  .btn-green:hover:not(:disabled) {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    box-shadow: 0 6px 18px rgba(34, 197, 94, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-red {
+    background: linear-gradient(135deg, #dc2626, #b91c1c);
+    color: #fef2f2;
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.25);
+  }
+  .btn-red:hover:not(:disabled) {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    box-shadow: 0 6px 18px rgba(239, 68, 68, 0.35);
+    transform: translateY(-1px);
+  }
+
+  .btn-amber {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fcd34d;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+  }
+  .btn-amber:hover:not(:disabled) {
+    background: rgba(245, 158, 11, 0.25);
+    border-color: #f59e0b;
+    color: #ffffff;
+  }
+
+  .btn-secondary {
+    background: rgba(30, 41, 59, 0.8);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+  }
+  .btn-secondary:hover:not(:disabled) {
+    background: rgba(51, 65, 85, 0.9);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+  }
+
+  .rec-btns {
+    display: flex;
+    gap: 10px;
+  }
+  .rec-btns button { flex: 1; }
+
+  /* Audio Output items */
   .file-item {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px;
-    background: #0f172a; border: 1px solid #334155; border-radius: 10px;
-    padding: 10px 14px; margin-top: 8px; font-size: .9rem; flex-wrap: wrap;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 10px 14px;
+    margin-top: 10px;
+    font-size: 0.85rem;
+    flex-wrap: wrap;
   }
-  .file-item .fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
-  .file-item .fsize { color: #94a3b8; font-size: .78rem; }
+  .file-item .fname {
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--accent-cyan);
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+  .file-item .fsize { color: var(--text-muted); font-size: 0.78rem; }
   .file-item .fcontrols { display: flex; align-items: center; gap: 8px; }
-  .file-item audio { height: 34px; max-width: 220px; }
-  .file-item .mini, .mini {
-    padding: 6px 12px; font-size: .8rem; border-radius: 8px;
-    background: #1e293b; color: #e2e8f0; border: 1px solid #334155; width: auto;
+  .file-item audio { height: 32px; max-width: 200px; border-radius: 6px; }
+
+  .mini {
+    padding: 6px 12px;
+    font-size: 0.78rem;
+    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.9);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    width: auto;
   }
-  .file-item .mini:hover, .mini:hover { color: #38bdf8; border-color: #38bdf8; }
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 6px; }
-  .row label { font-size: .95rem; font-weight: 600; }
-  select#model {
-    background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
-    border-radius: 8px; padding: 8px 10px; font-size: .9rem; max-width: 70%;
+  .mini:hover {
+    color: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+    background: rgba(56, 189, 248, 0.1);
   }
-  .progress-wrap { margin-top: 14px; display: none; }
+
+  /* Form Elements & Selects */
+  .form-group {
+    margin-bottom: 14px;
+  }
+  .form-group label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 6px;
+  }
+  select, textarea, input[type="text"] {
+    width: 100%;
+    background: var(--bg-input);
+    color: var(--text-main);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 0.88rem;
+    transition: all 0.2s ease;
+  }
+  select:focus, textarea:focus, input[type="text"]:focus {
+    outline: none;
+    border-color: var(--accent-cyan);
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.15);
+  }
+  textarea {
+    resize: vertical;
+    line-height: 1.6;
+  }
+  textarea.out {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82rem;
+    background: rgba(9, 13, 22, 0.95);
+  }
+
+  .hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 5px;
+    line-height: 1.45;
+  }
+
+  /* Progress Bar */
+  .progress-wrap {
+    margin-top: 14px;
+    background: var(--bg-input);
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+  }
   .progress-label {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-bottom: 6px; font-size: .9rem; gap: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
   }
-  .pct { font-weight: 700; color: #38bdf8; min-width: 44px; text-align: right; }
+  .pct {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    color: var(--accent-cyan);
+  }
   .progress-bar {
-    height: 18px; background: #0f172a; border-radius: 10px; overflow: hidden;
-    position: relative; border: 1px solid #334155;
+    height: 8px;
+    background: rgba(30, 41, 59, 0.8);
+    border-radius: 10px;
+    overflow: hidden;
   }
   .progress-fill {
-    height: 100%; width: 0%; border-radius: 10px;
-    background: linear-gradient(90deg, #38bdf8, #22d3ee);
-    transition: width .3s ease;
+    height: 100%;
+    width: 0%;
+    border-radius: 10px;
+    background: linear-gradient(90deg, #38bdf8, #8b5cf6);
+    transition: width 0.3s ease;
   }
-  .area-label {
-    font-size: .85rem; color: #94a3b8; font-weight: 600;
-    text-transform: uppercase; letter-spacing: .04em;
+
+  /* Quick Presets Pills */
+  .presets-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+    margin-bottom: 12px;
   }
-  .area-label-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
-  .copy-btn {
-    background: #1e293b; color: #94a3b8; border: 1px solid #334155;
-    border-radius: 8px; padding: 4px 12px; font-size: .8rem; cursor: pointer;
-    font-weight: 600; width: auto;
+  .preset-chip {
+    padding: 5px 12px;
+    border-radius: 20px;
+    background: rgba(56, 189, 248, 0.08);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    color: var(--accent-cyan);
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    user-select: none;
   }
-  .copy-btn:hover { color: #e2e8f0; border-color: #475569; }
-  textarea.out {
-    width: 100%; margin-top: 6px; background: #0f172a; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: 10px; padding: 10px;
-    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    resize: vertical;
+  .preset-chip:hover {
+    background: rgba(56, 189, 248, 0.18);
+    border-color: var(--accent-cyan);
+    transform: translateY(-1px);
   }
-  .extra-label { font-size: .95rem; margin-top: 16px; display: block; color: #e2e8f0; font-weight: 600; }
-  textarea#llmPrompt {
-    width: 100%; margin-top: 6px; background: #0f172a; color: #e2e8f0;
-    border: 1px solid #334155; border-radius: 10px; padding: 10px;
-    font: 13px/1.5 system-ui, sans-serif; resize: vertical;
+
+  /* Status Logs */
+  #status, #recStatus, #llmStatus {
+    margin-top: 10px;
+    font-size: 0.83rem;
+    min-height: 1.2em;
+    word-break: break-word;
   }
-  textarea#llmPrompt:focus { outline: none; border-color: #38bdf8; }
-  #llmStatus.ok { color: #4ade80; }
-  #llmStatus.error { color: #f87171; }
-  #status { margin-top: 14px; white-space: pre-wrap; min-height: 1.2em; font-size: .92rem; }
-  #status.error { color: #f87171; }
-  #status.ok { color: #4ade80; }
-  .history-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .status-box {
+    padding: 10px 14px;
+    border-radius: 10px;
+    margin-top: 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+  }
+  #status.error, #recStatus.error, #llmStatus.error { color: #fca5a5; }
+  #status.ok, #recStatus.ok, #llmStatus.ok { color: #86efac; }
+
+  /* History list styles */
+  .history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
   .hist-item {
-    background: #0f172a; border: 1px solid #334155; border-radius: 10px;
-    padding: 14px 16px; margin-top: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    transition: border-color 0.2s ease;
   }
-  .hist-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
-  .hist-name { font-weight: 700; color: #f8fafc; font-size: 1rem; }
-  .hist-meta { font-size: .8rem; color: #94a3b8; margin-top: 2px; }
-  .hist-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .hist-actions .mini.green { background: #14532d; border-color: #22c55e; color: #bbf7d0; }
-  .hist-actions .mini.green:hover { background: #166534; }
-  .hist-actions .mini.red { background: #450a0a; color: #fecaca; border-color: #7f1d1d; }
-  .hist-actions .mini.red:hover { background: #7f1d1d; }
+  .hist-item:hover { border-color: rgba(255, 255, 255, 0.15); }
+  .hist-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .hist-name { font-weight: 700; color: var(--text-main); font-size: 1rem; }
+  .hist-meta { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+  .hist-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .hist-actions .mini.green {
+    background: rgba(34, 197, 94, 0.15);
+    border-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+  }
+  .hist-actions .mini.green:hover { background: rgba(34, 197, 94, 0.25); color: #ffffff; }
+  .hist-actions .mini.red {
+    background: rgba(239, 68, 68, 0.15);
+    border-color: rgba(239, 68, 68, 0.3);
+    color: #fca5a5;
+  }
+  .hist-actions .mini.red:hover { background: rgba(239, 68, 68, 0.25); color: #ffffff; }
   .hist-transcript {
-    margin-top: 8px; background: #0f172a; color: #94a3b8;
-    border: 1px dashed #334155; border-radius: 8px; padding: 8px 12px;
-    font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
-    max-height: 120px; overflow-y: auto; white-space: pre-wrap;
+    margin-top: 10px;
+    background: var(--bg-input);
+    color: var(--text-muted);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    max-height: 140px;
+    overflow-y: auto;
+    white-space: pre-wrap;
   }
-  .meta { font-size: .8rem; color: #64748b; margin-top: 22px; line-height: 1.5; }
+
+  .copy-btn {
+    background: rgba(30, 41, 59, 0.8);
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 0.78rem;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .copy-btn:hover { color: var(--text-main); border-color: rgba(255, 255, 255, 0.2); }
+
+  .footer-meta {
+    text-align: center;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 32px;
+    margin-bottom: 16px;
+  }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>Static Recorder</h1>
-  <p class="sub">Records your microphone (Agent) and computer system audio (Caller) as two tracks of one call, saves them on this device, and transcribes them 100% in your browser. <b>No server, no upload, no API key.</b></p>
 
-  <div class="tabs" id="tabs">
-    <div class="tab active" data-tab="recorder">Recorder</div>
-    <div class="tab" data-tab="history">History</div>
+<!-- App Header Navigation -->
+<header class="app-header">
+  <div class="header-container">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/><path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+      </div>
+      <div class="brand-text">
+        <h1>Static Recorder Pro</h1>
+        <p>Local Dual-Track Audio Recorder &amp; AI Workspace</p>
+      </div>
+    </div>
+
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="recorder">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/></svg>
+        Studio Workspace
+      </div>
+      <div class="tab" data-tab="history">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
+        Call History
+      </div>
+    </div>
+
+    <div class="badges">
+      <div class="badge"><span class="badge-dot"></span> 100% Local &amp; Private</div>
+      <div class="badge" id="llmDeviceNote">Detecting GPU...</div>
+    </div>
   </div>
+</header>
 
-  <!-- ===================== RECORDER TAB ===================== -->
+<!-- Main App Wrapper -->
+<div class="main-wrapper">
+
+  <!-- ===================== STUDIO WORKSPACE TAB ===================== -->
   <div class="tab-pane active" id="pane-recorder">
-    <p class="hint" style="line-height:1.5">On <b>Start</b>, allow the microphone, then pick the tab/window with the call (choose &ldquo;Share system audio&rdquo; / <i>Include audio</i>). Recording needs this page opened over HTTPS <i>or via the local file (double-click)</i>.</p>
+    <div class="studio-grid">
+      
+      <!-- LEFT COLUMN: Capture & Model Controls -->
+      <div class="studio-left">
+        
+        <!-- Live Audio Recorder Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24"><path d="M12 15c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v7c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 15 6.7 12H5c0 3.41 2.72 6.23 6 6.72V22h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
+              Dual-Track Recorder
+            </div>
+          </div>
+          
+          <div class="card-desc">
+            Captures <b>Mic (Agent)</b> &amp; <b>System Audio (Caller)</b> as separate tracks. Ensure "Share system audio" is enabled when selecting the tab/window.
+          </div>
 
-    <div class="rec-ind" id="recInd"><span class="dot"></span> Recording... <span class="elapsed" id="recElapsed">0s</span></div>
+          <div class="rec-ind" id="recInd">
+            <div class="rec-ind-left">
+              <span class="dot"></span> Recording in progress
+            </div>
+            <span class="elapsed" id="recElapsed">0s</span>
+          </div>
 
-    <div class="meters">
-      <div class="meter-row">
-        <div class="meter-label"><span>Input (your mic)</span><span id="recInPct">0%</span></div>
-        <div class="meter-track"><div class="meter-fill" id="recMeterIn"></div></div>
+          <div class="meters">
+            <div class="meter-row">
+              <div class="meter-label"><span>Agent (Microphone)</span><span id="recInPct">0%</span></div>
+              <canvas class="meter-canvas" id="recWaveIn"></canvas>
+            </div>
+            <div class="meter-row">
+              <div class="meter-label"><span>Caller (System Audio)</span><span id="recOutPct">0%</span></div>
+              <canvas class="meter-canvas" id="recWaveOut"></canvas>
+            </div>
+          </div>
+
+          <div class="rec-btns">
+            <button type="button" id="recStart" class="btn-green">Start Recording</button>
+            <button type="button" id="recStop" class="btn-red" disabled>Stop</button>
+          </div>
+
+          <div id="recStatus"></div>
+
+          <div id="recAfter" style="display:none; margin-top: 14px;">
+            <div id="recFiles"></div>
+            <div class="hint" id="recSavedNote" style="display:none; margin-top: 8px;">Saved locally in IndexedDB storage.</div>
+          </div>
+        </div>
+
+        <!-- Speech Recognition (Whisper ASR) Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24"><path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/></svg>
+              Whisper Speech Recognition
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="model">Whisper ASR Model</label>
+            <select id="model">
+              <option value="onnx-community/whisper-tiny.en">Tiny (Fastest, ~40 MB)</option>
+              <option value="onnx-community/whisper-base.en" selected>Base (Balanced, ~40-90 MB)</option>
+              <option value="onnx-community/whisper-small.en">Small (High Accuracy, ~150-230 MB)</option>
+            </select>
+            <div class="hint">Model downloads once to browser cache. No API key or server required.</div>
+          </div>
+
+          <div class="rec-btns" style="margin-top: 14px;">
+            <button type="button" id="transcribeBtn" class="btn-green" disabled>Transcribe Audio</button>
+            <button type="button" id="transcribeCancel" class="btn-red" disabled>Cancel</button>
+          </div>
+
+          <div class="progress-wrap" id="progressWrap" style="display:none">
+            <div class="progress-label">
+              <span id="stage">Preparing...</span>
+              <span class="elapsed" id="elapsed"></span>
+              <span class="pct" id="pct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="fill"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- System & General Status -->
+        <div id="status"></div>
+
       </div>
-      <div class="meter-row">
-        <div class="meter-label"><span>Output (caller)</span><span id="recOutPct">0%</span></div>
-        <div class="meter-track"><div class="meter-fill" id="recMeterOut"></div></div>
+
+      <!-- RIGHT COLUMN: Transcript Editor & AI Co-pilot -->
+      <div class="studio-right">
+
+        <!-- Transcript Workspace Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+              Call Transcript Workspace
+            </div>
+            <div style="display:flex; gap:8px">
+              <button type="button" class="copy-btn" id="copyTranscript">Copy All</button>
+              <button type="button" class="copy-btn" id="downloadTranscript">Download .txt</button>
+            </div>
+          </div>
+
+          <div id="transcriptWrap" style="display:none">
+            <textarea class="out" id="transcriptOut" rows="11" spellcheck="false" placeholder="Transcript will populate here after processing, or load one from history. You can edit it manually before generating AI insights."></textarea>
+          </div>
+        </div>
+
+        <!-- AI Assistant & Co-Pilot Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
+              Local AI Co-Pilot
+            </div>
+          </div>
+
+          <div class="card-desc">
+            Runs an LLM entirely inside your browser (WebGPU/WASM) to extract notes, action items, or follow-ups.
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <div class="form-group">
+              <label for="llmModel">AI Model</label>
+              <select id="llmModel">
+                <option value="onnx-community/Qwen2.5-0.5B-Instruct" selected>Qwen2.5 0.5B (Recommended, ~0.5 GB)</option>
+                <option value="onnx-community/SmolLM2-360M-Instruct-ONNX">SmolLM2 360M (Fast/CPU mode, ~0.3 GB)</option>
+                <option value="onnx-community/SmolLM2-135M-Instruct-ONNX">SmolLM2 135M (Smallest, ~0.2 GB)</option>
+                <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B (Best Quality, ~1.1 GB)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="llmStyle">Generation Style</label>
+              <select id="llmStyle">
+                <option value="precise" selected>Precise (Stable &amp; Factual)</option>
+                <option value="balanced">Balanced (Moderate Variety)</option>
+                <option value="creative">Creative (Drafting &amp; Formatting)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="llmPrompt">AI Prompt Instruction</label>
+            
+            <!-- Quick Preset Chips -->
+            <div class="presets-row">
+              <div class="preset-chip" data-prompt="Summarize this call in 5 key bullet points with executive context.">📝 Bullet Summary</div>
+              <div class="preset-chip" data-prompt="Extract all action items, owners, and promised next steps from this transcript.">✅ Action Items</div>
+              <div class="preset-chip" data-prompt="Write a professional follow-up reply email summarizing key discussions and clear next steps. Sign off as 'Me'.">✉️ Follow-up Email</div>
+              <div class="preset-chip" data-prompt="List the main decisions made, unanswered questions, and key concerns raised during the call.">💡 Key Decisions</div>
+            </div>
+
+            <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="What should the AI do with this transcript?">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as "Me".</textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="llmRef">Format Reference / Template (Optional)</label>
+            <textarea id="llmRef" rows="2" spellcheck="false" placeholder="Paste a sample layout or structure template here. The AI will match its format while strictly using data from the transcript."></textarea>
+          </div>
+
+          <div class="rec-btns" style="margin-top:14px">
+            <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
+            <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
+          </div>
+
+          <div class="progress-wrap" id="llmProgressWrap" style="display:none">
+            <div class="progress-label">
+              <span id="llmStage">Preparing AI...</span>
+              <span class="elapsed" id="llmElapsed"></span>
+              <span class="pct" id="llmPct">0%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="llmFill"></div>
+            </div>
+          </div>
+
+          <div id="llmWrap" style="display:none; margin-top: 16px;">
+            <div class="card-header" style="border-bottom:none; margin-bottom: 8px; padding-bottom: 0;">
+              <div class="card-title">AI Generated Insight</div>
+              <div style="display:flex; gap:8px">
+                <button type="button" class="copy-btn" id="copyLlm">Copy AI Text</button>
+                <button type="button" class="copy-btn" id="downloadLlm">Download .txt</button>
+              </div>
+            </div>
+            <textarea class="out" id="llmOut" rows="10" readonly spellcheck="false" placeholder="AI response output will appear here."></textarea>
+          </div>
+
+          <div id="llmStatus"></div>
+
+        </div>
+
       </div>
-    </div>
 
-    <div class="rec-btns">
-      <button type="button" id="recStart" class="btn-green">Start Recording</button>
-      <button type="button" id="recStop" class="btn-red" disabled>Stop</button>
     </div>
-
-    <div id="recAfter" style="display:none">
-      <div id="recFiles"></div>
-      <p class="hint" id="recSavedNote" style="display:none">Saved to this browser's storage (History tab). Stays on this device until you delete it.</p>
-    </div>
-    <div id="recStatus"></div>
   </div>
 
-  <!-- ===================== HISTORY TAB ===================== -->
+  <!-- ===================== CALL HISTORY TAB ===================== -->
   <div class="tab-pane" id="pane-history">
-    <div class="history-head">
-      <span class="hint">Recordings are stored in this browser (IndexedDB) and transcribed locally.</span>
-      <div style="display:flex;gap:8px">
-        <button type="button" id="historyRefresh" class="btn-amber" style="padding:8px 14px;width:auto">Refresh</button>
-        <button type="button" id="historyClear" class="btn-red" style="padding:8px 14px;width:auto">Clear All</button>
+    <div class="card">
+      <div class="history-head">
+        <div>
+          <div class="card-title" style="font-size:1.1rem">Call History Archives</div>
+          <div class="hint">Recordings and transcripts are stored securely in browser IndexedDB storage.</div>
+        </div>
+        <div style="display:flex; gap:8px">
+          <button type="button" id="historyRefresh" class="btn-amber" style="padding:8px 14px; width:auto">Refresh</button>
+          <button type="button" id="historyClear" class="btn-red" style="padding:8px 14px; width:auto">Clear All Data</button>
+        </div>
       </div>
-    </div>
-    <div id="historyList"></div>
-  </div>
-
-  <div class="tab-divider"></div>
-
-  <!-- ===================== TRANSCRIBE SECTION ===================== -->
-  <div class="row">
-    <label for="model">Whisper model</label>
-    <select id="model">
-      <option value="onnx-community/whisper-tiny.en">tiny (fastest, ~40 MB)</option>
-      <option value="onnx-community/whisper-base.en" selected>base (balanced, ~40-90 MB)</option>
-      <option value="onnx-community/whisper-small.en">small (accurate, ~150-230 MB)</option>
-    </select>
-  </div>
-  <div class="hint">The model is downloaded from Hugging Face on first use (needs internet once), then cached by the browser. Larger models are more accurate but slower.</div>
-
-  <div class="rec-btns" style="margin-top:14px">
-    <button type="button" id="transcribeBtn" class="btn-green" disabled>Transcribe Latest</button>
-    <button type="button" id="transcribeCancel" class="btn-red" disabled>Cancel</button>
-  </div>
-
-  <div class="progress-wrap" id="progressWrap" style="display:none">
-    <div class="progress-label">
-      <span id="stage">Preparing...</span>
-      <span class="elapsed" id="elapsed"></span>
-      <span class="pct" id="pct">0%</span>
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" id="fill"></div>
+      <div id="historyList"></div>
     </div>
   </div>
 
-  <div id="transcriptWrap" style="display:none">
-    <div class="area-label-row">
-      <div class="area-label">Transcript</div>
-      <div style="display:flex;gap:8px">
-        <button type="button" class="copy-btn" id="copyTranscript">Select All</button>
-        <button type="button" class="copy-btn" id="downloadTranscript">Download .txt</button>
-      </div>
-    </div>
-    <textarea class="out" id="transcriptOut" rows="14" spellcheck="false" placeholder="The transcript will appear here after transcription. You can edit it before asking the AI."></textarea>
+  <div class="footer-meta">
+    Static Recorder Pro &bull; Runs 100% locally via WebGPU/WASM &bull; Zero server uploads &bull; No API key required
   </div>
 
-  <!-- ===================== LOCAL AI ASSISTANT ===================== -->
-  <div class="tab-divider"></div>
-  <div class="area-label">AI Assistant (runs locally in your browser)</div>
-  <p class="hint" style="line-height:1.5">Uses a small language model that runs entirely on this device &mdash; no server and no API key. The transcript above is used as context; type what you want done with it. The model downloads once (~0.5&ndash;1.1 GB) and is then cached by the browser.</p>
-
-  <div class="row">
-    <label for="llmModel">AI model</label>
-    <select id="llmModel">
-      <option value="onnx-community/Qwen2.5-0.5B-Instruct" selected>Qwen2.5 0.5B (recommended with WebGPU, ~0.5 GB)</option>
-      <option value="onnx-community/SmolLM2-360M-Instruct-ONNX">SmolLM2 360M (good on CPU / no WebGPU, ~0.3 GB)</option>
-      <option value="onnx-community/SmolLM2-135M-Instruct-ONNX">SmolLM2 135M (smallest/fastest, ~0.2 GB, basic)</option>
-      <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B (best quality, needs WebGPU, ~1.1 GB)</option>
-    </select>
-  </div>
-  <div class="hint" id="llmDeviceNote"></div>
-
-  <label class="extra-label" for="llmPrompt">What should the AI do with the transcript?</label>
-  <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="e.g. Write a reply email based on this conversation">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as &quot;Me&quot;.</textarea>
-  <div class="hint">Tips: "summarize the call in 5 bullets", "list the action items and who owns them", "draft a follow-up text message", "explain this to a new colleague".</div>
-
-  <label class="extra-label" for="llmRef">Reference / example notes (optional)</label>
-  <textarea id="llmRef" rows="3" spellcheck="false" placeholder="Paste an old note or template here ONLY to show the desired format. The AI is instructed to ignore its content, names, and details."></textarea>
-  <div class="hint">Use this to teach the output format (section headings, style). The AI is told explicitly that this box's <b>content is not part of the call</b> and must never be repeated.</div>
-
-  <div class="rec-btns" style="margin-top:14px">
-    <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
-    <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
-  </div>
-
-  <div class="progress-wrap" id="llmProgressWrap" style="display:none">
-    <div class="progress-label">
-      <span id="llmStage">Preparing...</span>
-      <span class="elapsed" id="llmElapsed"></span>
-      <span class="pct" id="llmPct">0%</span>
-    </div>
-    <div class="progress-bar">
-      <div class="progress-fill" id="llmFill"></div>
-    </div>
-  </div>
-
-  <div id="llmWrap" style="display:none">
-    <div class="area-label-row">
-      <div class="area-label">AI Response</div>
-      <div style="display:flex;gap:8px">
-        <button type="button" class="copy-btn" id="copyLlm">Select All</button>
-        <button type="button" class="copy-btn" id="downloadLlm">Download .txt</button>
-      </div>
-    </div>
-    <textarea class="out" id="llmOut" rows="14" readonly spellcheck="false" placeholder="The AI response will appear here."></textarea>
-  </div>
-
-  <div id="llmStatus" class="hint" style="margin-top:8px"></div>
-
-  <div id="status"></div>
-
-  <p class="meta">Works from a local file (double-click) or any static host. Best in Chrome/Edge (WebGPU), Firefox and Safari also work (slower WASM). iPhones cannot capture system audio — the microphone still works. Audio never leaves this device.</p>
 </div>
 
 <script>
 "use strict";
 /* =========================================================================
-   Static Recorder - single-file, serverless. No ES modules, no file workers:
-   runs by double-clicking this file. Transcriptions use Transformers.js
-   loaded from a CDN (CORS-enabled) on first use.
+   Static Recorder Pro - single-file, serverless audio recorder & transcriber.
    ========================================================================= */
 
 var $ = function (id) { return document.getElementById(id); };
@@ -340,19 +881,36 @@ function wavDurationSeconds(blob) {
 /* ---------------------------------------------------------------------------
    WAV conversion (16 kHz mono)
 --------------------------------------------------------------------------- */
-function toF32(audioBuf) {
-  var rate = 16000, ratio = audioBuf.sampleRate / rate;
-  var outLen = Math.round(audioBuf.length / ratio);
-  var out = new Float32Array(outLen);
-  var nCh = audioBuf.numberOfChannels;
-  for (var i = 0; i < outLen; i++) {
-    var idx = Math.floor(i * ratio);
-    var v = audioBuf.getChannelData(0)[idx];
-    for (var c = 1; c < nCh; c++) v += audioBuf.getChannelData(c)[idx];
-    if (nCh > 1) v /= nCh;
-    out[i] = v;
-  }
-  return out;
+function decodeAndResample16k(blob) {
+  var ctx = new (window.AudioContext || window.webkitAudioContext)();
+  return blob.arrayBuffer().then(function (buf) { 
+    return ctx.decodeAudioData(buf); 
+  }).then(function(audioBuffer) {
+    if (ctx.close) ctx.close();
+    var offlineCtx = new window.OfflineAudioContext(1, Math.ceil(audioBuffer.duration * 16000), 16000);
+    var source = offlineCtx.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(offlineCtx.destination);
+    source.start(0);
+    return offlineCtx.startRendering();
+  }).then(function(renderedBuffer) {
+    var out = renderedBuffer.getChannelData(0);
+    var maxAbs = 0;
+    for (var i = 0; i < out.length; i++) {
+      var absV = Math.abs(out[i]);
+      if (absV > maxAbs) maxAbs = absV;
+    }
+    if (maxAbs > 0) {
+      var scale = 0.95 / maxAbs;
+      for (var i = 0; i < out.length; i++) {
+        out[i] *= scale;
+      }
+    }
+    return out;
+  }).catch(function(e) {
+    if (ctx.close) ctx.close();
+    throw e;
+  });
 }
 
 function encodeWav(out) {
@@ -372,24 +930,17 @@ function encodeWav(out) {
   return new Blob([buffer], { type: 'audio/wav' });
 }
 
-function decodeAudio(blob) {
-  var ctx = new (window.AudioContext || window.webkitAudioContext)();
-  return blob.arrayBuffer().then(function (buf) { return ctx.decodeAudioData(buf); })
-    .then(function (a) { if (ctx.close) ctx.close(); return a; },
-          function (e) { if (ctx.close) ctx.close(); throw e; });
-}
-
 /** webm/opus blob -> 16 kHz mono WAV blob */
 function blobToWav16k(blob) {
-  return decodeAudio(blob).then(function (ab) { return encodeWav(toF32(ab)); });
+  return decodeAndResample16k(blob).then(function (f32) { return encodeWav(f32); });
 }
 /** WAV blob -> 16 kHz mono Float32Array (for whisper) */
 function wavToF32(blob) {
-  return decodeAudio(blob).then(function (ab) { return toF32(ab); });
+  return decodeAndResample16k(blob);
 }
 
 /* ---------------------------------------------------------------------------
-   Storage (IndexedDB with in-memory fallback so file:// quirks never block)
+   Storage (IndexedDB with in-memory fallback)
 --------------------------------------------------------------------------- */
 var Store = (function () {
   var db = null, memory = [], memOk = false, useMemory = false;
@@ -499,22 +1050,60 @@ var Store = (function () {
 var Recorder = (function () {
   var mic = null, out = null, micRec = null, outRec = null;
   var micChunks = [], outChunks = [], recording = false, startT = 0;
+  var micWriter = null, outWriter = null, micFileHandle = null, outFileHandle = null;
+
+  function initOPFS() {
+    if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
+    return navigator.storage.getDirectory().then(function(dir) {
+      return Promise.all([
+        dir.getFileHandle('mic.webm', {create: true}),
+        dir.getFileHandle('out.webm', {create: true})
+      ]).then(function(handles) {
+        micFileHandle = handles[0];
+        outFileHandle = handles[1];
+        return Promise.all([micFileHandle.createWritable(), outFileHandle.createWritable()]);
+      }).then(function(writers) {
+        micWriter = writers[0];
+        outWriter = writers[1];
+        return true;
+      });
+    }).catch(function() { return false; });
+  }
   var actx = null, analysers = null, timer = null, meterRaf = null;
   var onStatus, onStopped;
 
-  function meter(an, fillEl, pctEl) {
+  function drawWave(an, canvas, stroke, pctEl) {
+    if (!canvas) return;
+    var dpr = window.devicePixelRatio || 1;
+    var rect = canvas.getBoundingClientRect();
+    var w = Math.max(1, Math.round(rect.width * dpr));
+    var h = Math.max(1, Math.round(rect.height * dpr));
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+    var ctx = canvas.getContext('2d');
     var buf = new Uint8Array(an.fftSize);
     an.getByteTimeDomainData(buf);
     var sum = 0;
     for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
     var pct = Math.min(100, Math.round(Math.sqrt(sum / buf.length) * 100 * 2.2));
-    fillEl.style.width = pct + '%';
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = Math.max(1, Math.round(dpr));
+    ctx.beginPath();
+    for (var j = 0; j < buf.length; j++) {
+      var x = (j / (buf.length - 1)) * w;
+      var y = h / 2 + ((buf[j] - 128) / 128) * (h / 2) * 0.9;
+      if (j === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
     pctEl.textContent = pct + '%';
   }
   function meterLoop() {
     if (!recording) return;
-    meter(analysers.in, $('recMeterIn'), $('recInPct'));
-    meter(analysers.out, $('recMeterOut'), $('recOutPct'));
+    drawWave(analysers.in, $('recWaveIn'), '#22c55e', $('recInPct'));
+    drawWave(analysers.out, $('recWaveOut'), '#a855f7', $('recOutPct'));
     meterRaf = requestAnimationFrame(meterLoop);
   }
   function stopTracks() {
@@ -547,7 +1136,7 @@ var Recorder = (function () {
       out = o;
       if (!out.getAudioTracks()[0]) {
         stopTracks();
-        onStatus('No audio selected for output. Share the call tab/window and include system audio.', 'error');
+        onStatus('No audio selected for system output. Share the call tab/window and include system audio.', 'error');
         reset();
         return;
       }
@@ -567,18 +1156,27 @@ var Recorder = (function () {
       var opts = mime ? { mimeType: mime } : undefined;
       micRec = new MediaRecorder(new MediaStream([mic.getAudioTracks()[0]]), opts);
       outRec = new MediaRecorder(new MediaStream([out.getAudioTracks()[0]]), opts);
-      micRec.ondataavailable = function (e) { if (e.data.size) micChunks.push(e.data); };
-      outRec.ondataavailable = function (e) { if (e.data.size) outChunks.push(e.data); };
-      micRec.start(); outRec.start();
-
-      startT = Date.now();
-      clearInterval(timer);
-      timer = setInterval(function () { $('recElapsed').textContent = Math.floor((Date.now() - startT) / 1000) + 's'; }, 250);
-      $('recInd').style.display = 'flex';
-      onStatus('Recording. Speak now.', 'ok');
+      
+      initOPFS().then(function() {
+        micRec.ondataavailable = function (e) {
+          if (!e.data.size) return;
+          if (micWriter) micWriter.write(e.data); else micChunks.push(e.data);
+        };
+        outRec.ondataavailable = function (e) {
+          if (!e.data.size) return;
+          if (outWriter) outWriter.write(e.data); else outChunks.push(e.data);
+        };
+        micRec.start(); outRec.start();
+  
+        startT = Date.now();
+        clearInterval(timer);
+        timer = setInterval(function () { $('recElapsed').textContent = Math.floor((Date.now() - startT) / 1000) + 's'; }, 250);
+        $('recInd').style.display = 'flex';
+        onStatus('Recording active. Speak now.', 'ok');
+      });
     }).catch(function (e) {
       stopTracks();
-      onStatus('Could not start capture: ' + (e && e.name === 'NotAllowedError' ? 'permission denied. Allow mic + screen share.' : (e && e.message) || e), 'error');
+      onStatus('Could not start capture: ' + (e && e.name === 'NotAllowedError' ? 'Permission denied. Allow mic & screen share.' : (e && e.message) || e), 'error');
       reset();
     });
   }
@@ -591,10 +1189,15 @@ var Recorder = (function () {
     clearInterval(timer);
     cancelAnimationFrame(meterRaf);
     $('recInd').style.display = 'none';
-    $('recMeterIn').style.width = '0%'; $('recMeterOut').style.width = '0%';
+    ['recWaveIn', 'recWaveOut'].forEach(function (id) {
+      var cv = $(id);
+      if (!cv) return;
+      var cx = cv.getContext('2d');
+      cx.clearRect(0, 0, cv.width, cv.height);
+    });
     $('recInPct').textContent = '0%'; $('recOutPct').textContent = '0%';
     reset();
-    onStatus('Finalizing audio...');
+    onStatus('Finalizing recorded audio...');
     if (!micRec || !outRec) { reset(); return; }
 
     var wait = function (r) { return new Promise(function (res) { r.addEventListener('stop', res, { once: true }); }); };
@@ -604,10 +1207,28 @@ var Recorder = (function () {
       if (actx && actx.close) actx.close();
       actx = null; analysers = null;
 
-      var base = tsNowStamp() + '-' + String(Date.now()).slice(-4);
-      var jobs = [];
-      if (micChunks.length) jobs.push({ key: 'input', chunks: micChunks, mime: micRec.mimeType, name: base + '-input.wav' });
-      if (outChunks.length) jobs.push({ key: 'output', chunks: outChunks, mime: outRec.mimeType, name: base + '-output.wav' });
+      var closeProm = Promise.resolve();
+      if (micWriter || outWriter) {
+        closeProm = Promise.all([
+          micWriter ? micWriter.close() : Promise.resolve(),
+          outWriter ? outWriter.close() : Promise.resolve()
+        ]).then(function() {
+          micWriter = null; outWriter = null;
+          return Promise.all([
+            micFileHandle ? micFileHandle.getFile() : Promise.resolve(null),
+            outFileHandle ? outFileHandle.getFile() : Promise.resolve(null)
+          ]);
+        }).then(function(files) {
+          if (files[0]) micChunks = [files[0]];
+          if (files[1]) outChunks = [files[1]];
+        }).catch(function() {});
+      }
+
+      closeProm.then(function() {
+        var base = tsNowStamp() + '-' + String(Date.now()).slice(-4);
+        var jobs = [];
+        if (micChunks.length) jobs.push({ key: 'input', chunks: micChunks, mime: micRec.mimeType, name: base + '-input.wav' });
+        if (outChunks.length) jobs.push({ key: 'output', chunks: outChunks, mime: outRec.mimeType, name: base + '-output.wav' });
       Promise.all(jobs.map(function (j) {
         return blobToWav16k(new Blob(j.chunks, j.mime ? { type: j.mime } : undefined))
           .then(function (wav) { return { key: j.key, blob: wav, name: j.name }; });
@@ -618,6 +1239,7 @@ var Recorder = (function () {
         if (onStopped) onStopped(tracks);
       }).catch(function () {
         onStatus('Could not decode the recorded audio. Try Chrome/Edge.', 'error');
+      });
       });
     });
   }
@@ -630,14 +1252,45 @@ var Recorder = (function () {
 })();
 
 /* ---------------------------------------------------------------------------
-   Transcription: try a blob worker; fall back to main thread. Never a file
-   URL worker (browsers block those from file://).
+   Transcription (Whisper via Transformers.js)
 --------------------------------------------------------------------------- */
 var TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1/+esm';
+
+/* Energy-based voice activity detection. Returns the tightest span of speech
+   within [from, to) (sample indices), null when the region is effectively
+   silent, or the full span when no clear speech is found. */
+function findSpeechBounds(audio, from, to, rate) {
+  var FRAME = Math.max(1, Math.round(0.02 * rate));
+  var nFrames = Math.floor((to - from) / FRAME);
+  if (nFrames <= 1) return { start: from, end: to };
+  var rms = new Float32Array(nFrames);
+  var sumAll = 0;
+  for (var f = 0; f < nFrames; f++) {
+    var s = from + f * FRAME, sum = 0;
+    for (var i = 0; i < FRAME; i++) { var v = audio[s + i]; sum += v * v; }
+    rms[f] = Math.sqrt(sum / FRAME);
+    sumAll += rms[f];
+  }
+  var sorted = Array.prototype.slice.call(rms).sort(function (a, b) { return a - b; });
+  if (sorted[nFrames - 1] < 0.0008) return null;
+  var floor = sorted[Math.floor(nFrames * 0.2)] || 0;
+  var mean = sumAll / nFrames;
+  var threshold = Math.max(floor * 2.5, mean * 0.35, 0.002);
+  var first = -1, last = -1;
+  for (var g = 0; g < nFrames; g++) {
+    if (rms[g] >= threshold) { if (first < 0) first = g; last = g; }
+  }
+  if (first < 0) return { start: from, end: to };
+  var pad = Math.round(rate * 0.15);
+  var start = Math.max(from, from + first * FRAME - pad);
+  var end = Math.min(to, from + (last + 1) * FRAME + pad);
+  return { start: start, end: end };
+}
 
 var ASRWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
   'var CHUNK = 30 * 16000;',
+  findSpeechBounds.toString(),
   'var piped = null, pipedKey = null;',
   'self.onmessage = async function (e) {',
   '  var data = e.data || {};',
@@ -650,9 +1303,7 @@ var ASRWorkerSrc = [
   '      self.postMessage({ type: "stage", stage: "loading" });',
   '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
   '        device: data.device,',
-  '        dtype: data.device === "webgpu"',
-  '          ? { encoder_model: "fp32", decoder_model_merged: "q4" }',
-  '          : { encoder_model: "fp32", decoder_model_merged: "q8" },',
+  '        dtype: { encoder_model: "fp32", decoder_model_merged: (data.device === "wasm" ? "q8" : "q4") },',
   '        progress_callback: function (x) {',
   '          if (x && typeof x.progress === "number")',
   '            self.postMessage({ type: "loading", progress: Math.round(x.progress), label: x.file || "model" });',
@@ -662,6 +1313,7 @@ var ASRWorkerSrc = [
   '      });',
   '      pipedKey = data.model + "|" + data.device;',
   '    }',
+  '    if (data.type === "preload") return;',
   '    self.postMessage({ type: "stage", stage: "transcribing" });',
   '    for (var t = 0; t < tracks.length; t++) {',
   '      var audio = tracks[t].audio;',
@@ -669,17 +1321,29 @@ var ASRWorkerSrc = [
   '      var total = Math.max(1, Math.ceil(audio.length / CHUNK));',
   '      for (var off = 0, i = 0; off < audio.length; off += CHUNK, i++) {',
   '        var end = Math.min(audio.length, off + CHUNK);',
-  '        var out = await piped(audio.subarray(off, end), { return_timestamps: true });',
+  '        var bounds = findSpeechBounds(audio, off, end, 16000);',
+  '        if (!bounds) {',
+  '          self.postMessage({ type: "progress", track: t, done: i + 1, total: total });',
+  '          continue;',
+  '        }',
+  '        var segStart = bounds.start, segLen = bounds.end - bounds.start;',
+  '        var out = await piped(audio.subarray(segStart, bounds.end), {',
+  '          return_timestamps: true,',
+  '          chunk_callback: function (chunk) {',
+  '            var ct = String(chunk.text || "").trim();',
+  '            if (ct) self.postMessage({ type: "partial", track: t, text: ct });',
+  '          }',
+  '        });',
   '        var chunks = (out && out.chunks) || [];',
   '        for (var c = 0; c < chunks.length; c++) {',
   '          var text = String(chunks[c].text || "").trim();',
   '          if (!text) continue;',
-  '          var s = 0, en = (end - off) / 16000;',
+  '          var s = 0, en = segLen / 16000;',
   '          if (Array.isArray(chunks[c].timestamp) && chunks[c].timestamp.length >= 2) {',
   '            s = Number(chunks[c].timestamp[0]) || 0;',
   '            en = Number(chunks[c].timestamp[1]) || en;',
   '          }',
-  '          lines.push({ start: off / 16000 + s, end: off / 16000 + en, text: text });',
+  '          lines.push({ start: segStart / 16000 + s, end: segStart / 16000 + en, text: text });',
   '        }',
   '        self.postMessage({ type: "progress", track: t, done: i + 1, total: total });',
   '      }',
@@ -692,11 +1356,11 @@ var ASRWorkerSrc = [
   '};'
 ].join('\n');
 
-var WorkerMode = null;  // 'worker' or 'main'
+var WorkerMode = null;
 
 function makeBlobWorker() {
   var url = URL.createObjectURL(new Blob([ASRWorkerSrc], { type: 'text/javascript' }));
-  var w = new Worker(url);          // may throw
+  var w = new Worker(url);
   return { worker: w, url: url };
 }
 
@@ -716,7 +1380,6 @@ function workerReady(w, ms) {
   });
 }
 
-/** Prefer a blob worker (keeps the UI responsive); fall back to main thread. */
 function ensureWorkerMode() {
   if (WorkerMode) return Promise.resolve(WorkerMode);
   try {
@@ -737,11 +1400,10 @@ function ensureWorkerMode() {
 var _tfPromise = null;
 function transformersModule() {
   if (_tfPromise) return _tfPromise;
-  _tfPromise = import(TF_URL);   // dynamic import with CORS "*": works from file://
+  _tfPromise = import(TF_URL);
   return _tfPromise;
 }
 
-/** Sequential per-chunk transcription of one track on the main thread. */
 function mainTrack(piped, track, tIdx, tTotal, emit) {
   var audio = track.audio;
   var CHUNK = 30 * 16000;
@@ -752,17 +1414,23 @@ function mainTrack(piped, track, tIdx, tTotal, emit) {
     (function (off, i) {
       seq = seq.then(function () {
         var end = Math.min(audio.length, off + CHUNK);
-        return piped(audio.subarray(off, end), { return_timestamps: true }).then(function (out) {
+        var bounds = findSpeechBounds(audio, off, end, 16000);
+        if (!bounds) {
+          emit([{ type: 'progress', track: tIdx, done: i + 1, total: total }]);
+          return;
+        }
+        var segStart = bounds.start, segLen = bounds.end - bounds.start;
+        return piped(audio.subarray(segStart, bounds.end), { return_timestamps: true }).then(function (out) {
           var chunks = (out && out.chunks) || [];
           for (var c = 0; c < chunks.length; c++) {
             var text = String(chunks[c].text || '').trim();
             if (!text) continue;
-            var s = 0, en = (end - off) / 16000;
+            var s = 0, en = segLen / 16000;
             if (Array.isArray(chunks[c].timestamp) && chunks[c].timestamp.length >= 2) {
               s = Number(chunks[c].timestamp[0]) || 0;
               en = Number(chunks[c].timestamp[1]) || en;
             }
-            lines.push({ start: off / 16000 + s, end: off / 16000 + en, text: text });
+            lines.push({ start: segStart / 16000 + s, end: segStart / 16000 + en, text: text });
           }
           emit([{ type: 'progress', track: tIdx, done: i + 1, total: total }]);
         });
@@ -774,9 +1442,7 @@ function mainTrack(piped, track, tIdx, tTotal, emit) {
 
 function transcribeMainThread(tasks, model, device, emit) {
   return transformersModule().then(function (mod) {
-    var dtype = device === 'webgpu'
-      ? { encoder_model: 'fp32', decoder_model_merged: 'q4' }
-      : { encoder_model: 'fp32', decoder_model_merged: 'q8' };
+    var dtype = { encoder_model: 'fp32', decoder_model_merged: (device === 'wasm' ? 'q8' : 'q4') };
     var opts = {
       device: device,
       dtype: dtype,
@@ -808,7 +1474,24 @@ var activeTab = 'recorder';
 var latestRecordingId = null;
 var elapsedTimer = null, elapsedStart = 0;
 var transcribing = false;
-var currentWorker = null;
+var currentWorker = null, asrWorkerKey = null, asrWorkerUrl = null;
+function killASRWorker() {
+  if (currentWorker) { try { currentWorker.terminate(); } catch (e) {} }
+  if (asrWorkerUrl) { try { URL.revokeObjectURL(asrWorkerUrl); } catch (e) {} }
+  currentWorker = null; asrWorkerUrl = null; asrWorkerKey = null;
+}
+
+function initASRWorker(model, device) {
+  var key = model + "|" + device;
+  if (currentWorker && asrWorkerKey !== key) killASRWorker();
+  if (!currentWorker) {
+    var made = makeBlobWorker();
+    currentWorker = made.worker;
+    asrWorkerUrl = made.url;
+    asrWorkerKey = key;
+  }
+  return currentWorker;
+}
 
 function setTab(name) {
   activeTab = name;
@@ -865,7 +1548,7 @@ Recorder.init({
       audio.src = URL.createObjectURL(f.blob);
       var save = document.createElement('button');
       save.className = 'mini';
-      save.textContent = 'Save';
+      save.textContent = 'Save WAV';
       save.onclick = (function (b, nm) { return function () { downloadBlob(b, nm); }; })(f.blob, f.name);
       c.appendChild(audio); c.appendChild(save);
       d.appendChild(n); d.appendChild(sz); d.appendChild(c);
@@ -889,12 +1572,25 @@ Recorder.init({
       latestRecordingId = rec.id;
       $('transcribeBtn').disabled = false;
       $('recSavedNote').style.display = 'block';
-      recSetStatus('Recording saved locally. Listen, download, or transcribe below.' + (Store.isPersistent() ? '' : ' (storage unavailable: keeping it in memory for this session)'), 'ok');
+      recSetStatus('Recording saved locally to browser storage.', 'ok');
       renderHistory();
     });
   }
 });
-$('recStart').addEventListener('click', function () { Recorder.start(); });
+$('recStart').addEventListener('click', function () { 
+  Recorder.start(); 
+  detectDevice().then(function(dev) {
+    var model = $('modelSelect').value;
+    ensureWorkerMode().then(function(mode) {
+      if (mode === 'worker') {
+        try {
+          var w = initASRWorker(model, dev);
+          w.postMessage({ type: 'preload', model: model, device: dev });
+        } catch(e) {}
+      }
+    });
+  });
+});
 $('recStop').addEventListener('click', function () { Recorder.stop(); });
 
 /* ---------- Transcription flow ---------- */
@@ -904,7 +1600,6 @@ function detectDevice() {
   if (_devicePromise) return _devicePromise;
   _devicePromise = detectAdapter().then(function (adapter) {
     if (adapter) {
-      // Chrome exposes adapter.info; older builds have requestAdapterInfo().
       try {
         var info = adapter.info || null;
         var parts = [];
@@ -920,15 +1615,12 @@ function detectDevice() {
     _deviceLabel = '';
     return 'wasm';
   }).then(function (dev) {
-    if (dev !== 'webgpu') _devicePromise = null;  // don't cache failure: GPU process may not be ready yet
+    if (dev === 'wasm') _devicePromise = null;
     return dev;
   });
   return _devicePromise;
 }
 
-/** Try several adapter requests (some Linux/Chrome builds return null for the
- *  first request while the GPU process is still starting, or for one
- *  powerPreference). Resolves with an adapter or null. */
 function detectAdapter() {
   if (!navigator.gpu) return Promise.resolve(null);
   var opts = [
@@ -970,7 +1662,6 @@ function runTranscription(rec) {
   transcribing = true;
   $('transcribeBtn').disabled = true;
   $('transcribeCancel').disabled = false;
-  $('transcriptWrap').style.display = 'none';
   $('transcriptOut').value = '';
   setStatus('');
   $('progressWrap').style.display = 'block';
@@ -984,12 +1675,22 @@ function runTranscription(rec) {
   if (!tasks.length) { finishError('This recording has no audio.'); return; }
 
   var overall = 0;
+  var partials = [];
   var emit = function (events) {
     events.forEach(function (ev) {
-      if (ev.type === 'loading') {
-        setBar(ev.progress, 'Downloading / loading model (' + model.split('/').pop() + ')...');
+      if (ev.type === 'partial') {
+        var label = tasks[ev.track].label;
+        var baseText = formatLines(partials);
+        var pText = '[' + label + ']: ' + ev.text + '...';
+        $('transcriptOut').value = baseText ? baseText + '\n\n' + pText : pText;
+        $('transcriptOut').scrollTop = $('transcriptOut').scrollHeight;
+        $('transcriptWrap').style.display = 'block';
+      } else if (ev.type === 'track') {
+        partials.push({ label: ev.label, lines: ev.lines });
+      } else if (ev.type === 'loading') {
+        setBar(ev.progress, 'Loading model (' + model.split('/').pop() + ')...');
       } else if (ev.type === 'stage') {
-        if (ev.stage === 'loading') setBar(0, 'Downloading / loading model (' + model.split('/').pop() + ')...');
+        if (ev.stage === 'loading') setBar(0, 'Loading model (' + model.split('/').pop() + ')...');
         else setBar(overall === 0 ? 0 : overall, 'Transcribing...');
       } else if (ev.type === 'progress') {
         var tIdx = ev.track, tTotal = tasks.length;
@@ -1020,7 +1721,7 @@ function runTranscription(rec) {
     Store.saveTranscript(rec.id, text, model, device);
     renderHistory();
     updateLLMBtn();
-    setStatus('Transcription complete (' + device + ', ' + model.split('/').pop() + '). Nothing was uploaded.', 'ok');
+    setStatus('Transcription complete (' + device + ', ' + model.split('/').pop() + ').', 'ok');
   }).catch(function (err) {
     stopElapsed();
     setBar(0, 'Error');
@@ -1030,40 +1731,34 @@ function runTranscription(rec) {
     $('progressWrap').style.display = 'none';
     $('transcribeBtn').disabled = false;
     $('transcribeCancel').disabled = true;
-    if (currentWorker) { currentWorker.terminate(); currentWorker = null; }
+    killASRWorker();
   });
 }
 
 function runInWorker(tasks, model, device, emit) {
   return new Promise(function (resolve, reject) {
-    var made;
-    try { made = makeBlobWorker(); } catch (e) {
+    var w;
+    try { w = initASRWorker(model, device); } catch (e) {
       return transcribeMainThread(tasks, model, device, emit).then(resolve, reject);
     }
-    currentWorker = made.worker;
     var done = false;
     var results = [];
-    made.worker.onmessage = function (e) {
+    w.onmessage = function (e) {
+      if (done) return;
       var d = e.data || {};
-      if (d.type === 'complete') { cleanup(); resolve(results); }
+      if (d.type === 'complete') { done = true; resolve(results); }
       else if (d.type === 'track') { results.push({ label: d.label, lines: d.lines }); }
-      else if (d.type === 'error') { cleanup(); transcribeMainThread(tasks, model, device, emit).then(resolve, reject); }
+      else if (d.type === 'error') { done = true; transcribeMainThread(tasks, model, device, emit).then(resolve, reject); }
       else emit([d]);
     };
-    made.worker.onerror = function (e) {
-      // Blob worker or in-worker import() failed: degrade to main thread.
-      cleanup();
-      transcribeMainThread(tasks, model, device, emit).then(resolve, reject);
-    };
-    function cleanup() {
+    w.onerror = function (e) {
       if (done) return;
       done = true;
-      try { made.worker.terminate(); } catch (e) {}
-      URL.revokeObjectURL(made.url);
-      currentWorker = null;
-    }
-    var payload = { model: model, device: device, tracks: tasks.map(function (t) { return { label: t.label, audio: t.audio }; }) };
-    made.worker.postMessage(payload, tasks.map(function (t) { return t.audio.buffer; }));
+      killASRWorker();
+      transcribeMainThread(tasks, model, device, emit).then(resolve, reject);
+    };
+    var payload = { type: 'transcribe', model: model, device: device, tracks: tasks.map(function (t) { return { label: t.label, audio: t.audio }; }) };
+    w.postMessage(payload, tasks.map(function (t) { return t.audio.buffer; }));
   });
 }
 
@@ -1075,13 +1770,10 @@ function finishError(msg) {
 
 function cancelTranscription() {
   if (!transcribing) return;
-  if (currentWorker) {
-    try { currentWorker.terminate(); } catch (e) {}
-    currentWorker = null;
-  }
+  killASRWorker();
   stopElapsed();
   setBar(0, 'Cancelled');
-  setStatus('Transcription cancelled. You can try again.', '');
+  setStatus('Transcription cancelled.', '');
   transcribing = false;
   $('progressWrap').style.display = 'none';
   $('transcribeBtn').disabled = false;
@@ -1100,7 +1792,7 @@ $('transcribeBtn').addEventListener('click', function () {
 });
 $('transcribeCancel').addEventListener('click', cancelTranscription);
 
-/* ---------- Transcript output ---------- */
+/* ---------- Transcript actions ---------- */
 $('copyTranscript').addEventListener('click', function () {
   var t = $('transcriptOut');
   t.focus(); t.select();
@@ -1112,12 +1804,9 @@ $('downloadTranscript').addEventListener('click', function () {
   if (text) downloadBlob(new Blob([text], { type: 'text/plain' }), 'transcript-' + tsNowStamp() + '.txt');
 });
 
-/* =========================================================================
-   Local AI assistant: a small instruct LLM (Qwen2.5) running in the browser.
-   The transcript is passed as context with the user's instruction. The model
-   lives in a blob worker (same file://-safe technique as the ASR worker) and
-   is kept warm between generations. Cancel terminates the worker immediately.
-   ========================================================================= */
+/* ---------------------------------------------------------------------------
+   Local AI Assistant (LLM)
+--------------------------------------------------------------------------- */
 var LLMWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
   'var piped = null, pipedKey = null;',
@@ -1156,10 +1845,7 @@ var LLMWorkerSrc = [
   '      ],',
   '      {',
   '        max_new_tokens: d.maxTokens || 512,',
-  '        do_sample: true,',
-  '        temperature: 0.7,',
-  '        top_p: 0.9,',
-  '        repetition_penalty: 1.1,',
+  '        ...(d.gen || {}),',
   '        streamer: streamer',
   '      }',
   '    );',
@@ -1177,8 +1863,11 @@ var LLM_SYSTEM = 'You are a helpful assistant writing output from a call transcr
   'RULE 2: Text in any section called "EXAMPLE / REFERENCE" or "INSTRUCTIONS" is NOT part of the ' +
   'call. An EXAMPLE is shown only to imitate its formatting/style — never copy its content, ' +
   'names, companies, or details into your answer.\n' +
-  'RULE 3: Do not invent anything missing from the transcript. Write plain text; keep section ' +
-  'headings bold only if the instructions ask for them.';
+  'RULE 3: A REFERENCE section may help only with the SPELLING of a name or company that ALREADY ' +
+  'appears in the TRANSCRIPT. Never bring new names, details, numbers, or events from the ' +
+  'reference into the answer.\n' +
+  'RULE 4: Do not invent anything missing from the transcript. Write in the requested format, ' +
+  'never repeat the same sentence or phrase, and avoid symbols or characters you are unsure of.';
 
 var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
 var llmBusy = false, llmMode = null, llmAbort = false;
@@ -1187,14 +1876,12 @@ var llmCurrentJob = null, llmJobSeq = 0;
 var llmUserPickedModel = false;
 
 function llmDeviceNoteText(device) {
-  var label = _deviceLabel ? ' [' + _deviceLabel + ']' : '';
+  var label = _deviceLabel ? ' (' + _deviceLabel + ')' : '';
   return device === 'webgpu'
-    ? 'WebGPU detected' + label + ' — generating with GPU acceleration.'
-    : 'No WebGPU detected in this browser — using CPU (WASM) mode. It is slower and memory-limited, so SmolLM2 360M/135M are the safest choices. The app automatically retries with a smaller model if loading runs out of memory.';
+    ? 'WebGPU Active' + label
+    : 'WASM CPU Mode';
 }
 
-// Approximate first-download sizes. Used to pick automatic out-of-memory
-// fallbacks that are always smaller than the model the user selected.
 var LLM_MODEL_MB = {
   'onnx-community/Qwen2.5-1.5B-Instruct': 1100,
   'onnx-community/Qwen2.5-0.5B-Instruct': 500,
@@ -1205,19 +1892,25 @@ var LLM_SMALL_FALLBACKS = [
   'onnx-community/SmolLM2-360M-Instruct-ONNX',
   'onnx-community/SmolLM2-135M-Instruct-ONNX',
 ];
+
+var LLM_STYLES = {
+  precise:  { do_sample: false, repetition_penalty: 1.2 },
+  balanced: { do_sample: true,  temperature: 0.5, top_p: 0.95, repetition_penalty: 1.15 },
+  creative: { do_sample: true,  temperature: 0.8, top_p: 0.95, repetition_penalty: 1.1 },
+};
 var LLM_OOM_RE = /bad_alloc|can't create a session|out of memory|outofmemory|oom|allocation|memory/i;
 
 function shortModel(id) { return String(id || '').split('/').pop(); }
 function friendlyLLMError(message) {
   if (LLM_OOM_RE.test(String(message || ''))) {
-    return 'The browser ran out of memory loading this model. Try the SmolLM2 360M or 135M model, close other tabs, or use Chrome/Edge with WebGPU + hardware acceleration.';
+    return 'Browser memory full. Try SmolLM2 360M or Chrome/Edge with WebGPU acceleration.';
   }
   return message || 'unknown error';
 }
 
 function llmSetStatus(m, cls) {
   var el = $('llmStatus');
-  el.className = 'hint' + (cls ? ' ' + cls : '');
+  el.className = cls || '';
   el.textContent = m;
 }
 function llmSetBar(p, label) {
@@ -1248,13 +1941,14 @@ function stopLLMTimer() { clearInterval(llmTimer); llmTimer = null; }
 function appendLLMToken(jobId, text) {
   if (jobId !== llmJobSeq || llmAbort) return;
   llmTokens++;
-  $('llmOut').value += text;
-  $('llmOut').scrollTop = $('llmOut').scrollHeight;
+  var el = $('llmOut');
+  var nearBottom = (el.scrollHeight - el.scrollTop - el.clientHeight) <= 10;
+  el.value += text;
+  if (nearBottom) el.scrollTop = el.scrollHeight;
   $('llmStage').textContent = 'Generating... ' + llmTokens + ' tokens';
 }
 
 function finishLLM(result) {
-  // result: 'done' | 'cancelled' | 'error'
   stopLLMTimer();
   llmBusy = false;
   llmMode = null;
@@ -1265,10 +1959,10 @@ function finishLLM(result) {
     var secs = (Date.now() - llmStartTs) / 1000;
     var tps = secs > 0 ? (llmTokens / secs).toFixed(1) : '?';
     var dev = (llmCurrentJob && llmCurrentJob.device) || '?';
-    llmSetStatus('Done — ' + llmTokens + ' tokens in ' + fmtElapsed(secs) +
-      ' (~' + tps + ' tokens/sec, ' + dev + '). Generated locally in your browser; nothing was uploaded.', 'ok');
+    llmSetStatus('Generated ' + llmTokens + ' tokens in ' + fmtElapsed(secs) +
+      ' (~' + tps + ' tokens/sec, ' + dev + ').', 'ok');
   } else if (result === 'cancelled') {
-    llmSetStatus('Generation cancelled.' + ($('llmOut').value ? ' Partial output kept above.' : ''), '');
+    llmSetStatus('Generation cancelled.', '');
   }
 }
 
@@ -1276,7 +1970,7 @@ function runLLM() {
   if (llmBusy) return;
   var transcript = $('transcriptOut').value.trim();
   if (!transcript) {
-    llmSetStatus('Transcribe something first, or load a past transcript from the History tab.', 'error');
+    llmSetStatus('Transcribe something first or load a transcript from Call History.', 'error');
     return;
   }
   var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
@@ -1294,9 +1988,8 @@ function runLLM() {
     system: LLM_SYSTEM,
     user: userText,
     maxTokens: 512,
+    gen: LLM_STYLES[$('llmStyle').value] || LLM_STYLES.precise,
   };
-  // If the chosen model hits an out-of-memory error, retry with progressively
-  // smaller models rather than just failing.
   var selMb = LLM_MODEL_MB[job.model] || 9999;
   job.fallbacks = LLM_SMALL_FALLBACKS.filter(function (m) { return LLM_MODEL_MB[m] < selMb; });
   job.fallbackIdx = 0;
@@ -1315,14 +2008,13 @@ function runLLM() {
   startLLMJob(job);
 }
 
-/** Detect the device, (re)create the worker if needed, and send the job. */
 function startLLMJob(job) {
   detectDevice().then(function (device) {
     job.device = device;
     var note = $('llmDeviceNote');
     if (note) note.textContent = llmDeviceNoteText(device);
     var key = job.model + '|' + device;
-    if (llmWorker && llmWorkerKey !== key) killLLMWorker();  // free memory if model/device changed
+    if (llmWorker && llmWorkerKey !== key) killLLMWorker();
     if (!llmWorker) {
       try {
         var made = makeLLMWorker();
@@ -1332,18 +2024,17 @@ function startLLMJob(job) {
         llmWorker.onmessage = onLLMMessage;
         llmWorker.onerror = onLLMWorkerError;
       } catch (e) {
-        return llmMainThread(job);   // blob workers unavailable: run in-page
+        return llmMainThread(job);
       }
     }
     llmMode = 'worker';
     llmWorker.postMessage({
       type: 'generate', model: job.model, device: device,
-      system: job.system, user: job.user, maxTokens: job.maxTokens
+      system: job.system, user: job.user, maxTokens: job.maxTokens, gen: job.gen
     });
   });
 }
 
-/** Handle an error from any LLM path. Returns true if a retry was started. */
 function handleLLMError(message) {
   var job = llmCurrentJob;
   message = String(message || '');
@@ -1353,8 +2044,8 @@ function handleLLMError(message) {
     killLLMWorker();
     llmTokens = 0;
     $('llmOut').value = '';
-    llmSetBar(0, 'Retrying with a smaller AI model...');
-    llmSetStatus('Out of memory loading ' + shortModel(failed) + '. Retrying with the smaller ' + shortModel(job.model) + '...', '');
+    llmSetBar(0, 'Retrying with smaller AI model...');
+    llmSetStatus('Out of memory loading ' + shortModel(failed) + '. Retrying with ' + shortModel(job.model) + '...', '');
     startLLMJob(job);
     return true;
   }
@@ -1371,13 +2062,13 @@ function onLLMMessage(e) {
   var d = e.data || {};
   if (llmAbort) return;
   if (d.type === 'loading') {
-    llmSetBar(0, 'Loading AI model (first use downloads it)...');
+    llmSetBar(0, 'Loading AI model (first download may take a moment)...');
   } else if (d.type === 'progress') {
     if (d.progress >= 100) llmSetBar(100, 'Initializing AI model...');
     else llmSetBar(d.progress, 'Downloading AI model... ' + d.progress + '%');
   } else if (d.type === 'generating') {
     llmSetBar(100, 'Generating... 0 tokens');
-    llmSetStatus('Model ready (' + ((llmCurrentJob && llmCurrentJob.device) || '?') + '). Generating locally...', '');
+    llmSetStatus('Model ready. Generating locally...', '');
   } else if (d.type === 'token') {
     appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
   } else if (d.type === 'complete') {
@@ -1385,8 +2076,8 @@ function onLLMMessage(e) {
   } else if (d.type === 'error') {
     if (llmTokens === 0) {
       killLLMWorker();
-      if (handleLLMError(d.message)) return;      // OOM: retry smaller model
-      llmMainThread(llmCurrentJob);               // otherwise: in-page fallback
+      if (handleLLMError(d.message)) return;
+      llmMainThread(llmCurrentJob);
     } else {
       finishLLM('error');
       llmSetStatus('AI generation failed: ' + friendlyLLMError(d.message), 'error');
@@ -1395,7 +2086,6 @@ function onLLMMessage(e) {
 }
 
 function onLLMWorkerError(e) {
-  // Worker-level failure (e.g. module blocked): rerun in-page.
   if (llmTokens === 0 && llmCurrentJob) {
     killLLMWorker();
     if (handleLLMError(e && e.message)) return;
@@ -1406,13 +2096,10 @@ function onLLMWorkerError(e) {
   }
 }
 
-/** In-page fallback if blob workers are unavailable. The page may stutter
- *  while generating; cancel stops appending immediately but the current
- *  model step can't be interrupted. */
 function llmMainThread(job) {
   if (!job) return;
   llmMode = 'main';
-  llmSetStatus('Running AI on the main thread (worker unavailable) — the page may be less responsive.', '');
+  llmSetStatus('Running AI on main thread...', '');
   var modRef = null;
   transformersModule().then(function (mod) {
     modRef = mod;
@@ -1436,15 +2123,18 @@ function llmMainThread(job) {
     });
     return piped(
       [{ role: 'system', content: job.system }, { role: 'user', content: job.user }],
-      { max_new_tokens: job.maxTokens || 512, do_sample: true, temperature: 0.7, top_p: 0.9, repetition_penalty: 1.1, streamer: streamer }
+      Object.assign(
+        { max_new_tokens: job.maxTokens || 512, streamer: streamer },
+        job.gen || {}
+      )
     );
   }).then(function () {
-    if (job.id !== llmJobSeq) return;      // superseded/cancelled
+    if (job.id !== llmJobSeq) return;
     if (llmAbort) { finishLLM('cancelled'); return; }
     finishLLM('done');
   }).catch(function (err) {
     if (job.id !== llmJobSeq) return;
-    if (handleLLMError(err && err.message)) return;   // OOM: retry smaller model
+    if (handleLLMError(err && err.message)) return;
     finishLLM('error');
     llmSetStatus('AI generation failed: ' + friendlyLLMError(err && err.message), 'error');
   });
@@ -1457,8 +2147,6 @@ function cancelLLM() {
     finishLLM('cancelled');
     return;
   }
-  // Main-thread generation cannot be interrupted mid-step; stop collecting
-  // its output now and let it wind down.
   llmAbort = true;
   llmSetStatus('Cancelling...', '');
 }
@@ -1467,6 +2155,18 @@ $('llmBtn').addEventListener('click', runLLM);
 $('llmCancel').addEventListener('click', cancelLLM);
 $('transcriptOut').addEventListener('input', updateLLMBtn);
 $('llmModel').addEventListener('change', function () { llmUserPickedModel = true; });
+
+// Handle Quick Preset Chips
+document.addEventListener('click', function(e) {
+  var chip = e.target.closest('.preset-chip');
+  if (chip) {
+    var promptText = chip.getAttribute('data-prompt');
+    if (promptText) {
+      $('llmPrompt').value = promptText;
+      updateLLMBtn();
+    }
+  }
+});
 
 $('copyLlm').addEventListener('click', function () {
   var t = $('llmOut');
@@ -1479,16 +2179,15 @@ $('downloadLlm').addEventListener('click', function () {
   if (text) downloadBlob(new Blob([text], { type: 'text/plain' }), 'ai-response-' + tsNowStamp() + '.txt');
 });
 
-/** Load a past transcript into the shared transcript box so the AI (or a new
- *  transcription) can work on it. Called from History. */
 function loadTranscriptIntoAI(text, autoRun) {
   $('transcriptOut').value = text;
   $('transcriptWrap').style.display = 'block';
   updateLLMBtn();
+  setTab('recorder');
   if (autoRun) {
     runLLM();
   } else {
-    setStatus('Transcript loaded from history. Edit the prompt below if needed, then press "Generate with AI".', 'ok');
+    setStatus('Transcript loaded from history. Generate AI insights or edit below.', 'ok');
   }
   var target = $('llmPrompt');
   if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1512,10 +2211,10 @@ function mkHistBtn(label, cls, fn) {
 }
 
 function renderHistory() {
-  $('historyList').innerHTML = '<div class="hint">Loading...</div>';
+  $('historyList').innerHTML = '<div class="hint">Loading history...</div>';
   Store.listRecordings().then(function (recs) {
     if (!recs.length) {
-      $('historyList').innerHTML = '<div class="hint">No recordings yet. Go to the Recorder tab and hit Start Recording.</div>';
+      $('historyList').innerHTML = '<div class="hint" style="padding:12px 0">No recordings saved yet. Go to Studio Workspace and start a recording.</div>';
       return;
     }
     $('historyList').innerHTML = '';
@@ -1555,7 +2254,7 @@ function renderHistItem(rec, transcript) {
   if (rec.tracks && rec.tracks.output) {
     actions.appendChild(mkHistBtn('Save Caller (.wav)', '', function () { downloadBlob(rec.tracks.output.blob, rec.tracks.output.name); }));
   }
-  actions.appendChild(mkHistBtn('Transcribe', 'green', function () {
+  actions.appendChild(mkHistBtn('Transcribe Audio', 'green', function () {
     latestRecordingId = rec.id;
     setTab('recorder');
     runTranscription(rec);
@@ -1569,7 +2268,7 @@ function renderHistItem(rec, transcript) {
     }));
   }
   actions.appendChild(mkHistBtn('Delete', 'red', function () {
-    if (!confirm('Delete this recording (audio + transcript) from this browser?')) return;
+    if (!confirm('Delete this recording and transcript from local browser storage?')) return;
     Store.deleteRecording(rec.id).then(function () {
       if (latestRecordingId === rec.id) { latestRecordingId = null; $('transcribeBtn').disabled = true; }
       renderHistory();
@@ -1588,7 +2287,7 @@ function renderHistItem(rec, transcript) {
 
 $('historyRefresh').addEventListener('click', renderHistory);
 $('historyClear').addEventListener('click', function () {
-  if (!confirm('Delete ALL recordings and transcripts stored in this browser?')) return;
+  if (!confirm('Delete ALL local recordings and transcripts stored in this browser?')) return;
   Store.clearAll().then(function () {
     latestRecordingId = null;
     $('transcribeBtn').disabled = true;
@@ -1596,12 +2295,11 @@ $('historyClear').addEventListener('click', function () {
     $('transcriptOut').value = '';
     updateLLMBtn();
     renderHistory();
-    setStatus('All local data cleared.', 'ok');
+    setStatus('All local recordings cleared.', 'ok');
   });
 });
 
 /* ---------- Init ---------- */
-// COI service worker only helps when hosted over http(s); never on file://.
 if (location.protocol.indexOf('http') === 0) {
   var coi = document.createElement('script');
   coi.src = 'coi-serviceworker.js';
@@ -1615,13 +2313,12 @@ Store.listRecordings().then(function (recs) {
     latestRecordingId = recs[0].id;
     $('transcribeBtn').disabled = false;
   }
+  // Initialize workspace view
+  $('transcriptWrap').style.display = 'block';
   updateLLMBtn();
   renderHistory();
 });
 
-// Report the compute device up front and, when there is no WebGPU, preselect
-// a CPU-friendly model so the first run doesn't hit an out-of-memory error
-// (the user can still change it).
 detectDevice().then(function (device) {
   var note = $('llmDeviceNote');
   if (note) note.textContent = llmDeviceNoteText(device);

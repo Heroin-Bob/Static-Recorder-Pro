@@ -239,11 +239,13 @@
   <div class="row">
     <label for="llmModel">AI model</label>
     <select id="llmModel">
-      <option value="onnx-community/Qwen2.5-0.5B-Instruct" selected>Qwen2.5 0.5B (recommended, ~0.5 GB first use)</option>
+      <option value="onnx-community/Qwen2.5-0.5B-Instruct" selected>Qwen2.5 0.5B (recommended with WebGPU, ~0.5 GB)</option>
+      <option value="onnx-community/SmolLM2-360M-Instruct-ONNX">SmolLM2 360M (good on CPU / no WebGPU, ~0.3 GB)</option>
       <option value="onnx-community/SmolLM2-135M-Instruct-ONNX">SmolLM2 135M (smallest/fastest, ~0.2 GB, basic)</option>
-      <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B (better quality, ~1.1 GB first use)</option>
+      <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B (best quality, needs WebGPU, ~1.1 GB)</option>
     </select>
   </div>
+  <div class="hint" id="llmDeviceNote"></div>
 
   <label class="extra-label" for="llmPrompt">What should the AI do with the transcript?</label>
   <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="e.g. Write a reply email based on this conversation">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as &quot;Me&quot;.</textarea>
@@ -892,9 +894,16 @@ $('recStart').addEventListener('click', function () { Recorder.start(); });
 $('recStop').addEventListener('click', function () { Recorder.stop(); });
 
 /* ---------- Transcription flow ---------- */
+var _devicePromise = null;
 function detectDevice() {
-  if (!navigator.gpu) return Promise.resolve('wasm');
-  return navigator.gpu.requestAdapter().then(function (a) { return a ? 'webgpu' : 'wasm'; }).catch(function () { return 'wasm'; });
+  if (_devicePromise) return _devicePromise;   // cache: requestAdapter logs once, not per run
+  _devicePromise = (function () {
+    if (!navigator.gpu) return Promise.resolve('wasm');
+    return navigator.gpu.requestAdapter()
+      .then(function (a) { return a ? 'webgpu' : 'wasm'; })
+      .catch(function () { return 'wasm'; });
+  })();
+  return _devicePromise;
 }
 
 function formatLines(trackResults) {
@@ -1081,6 +1090,7 @@ var LLMWorkerSrc = [
   '      piped = await mod.pipeline("text-generation", d.model, {',
   '        device: d.device,',
   '        dtype: d.device === "webgpu" ? "q4f16" : "q4",',
+  '        session_options: d.device === "webgpu" ? {} : { enableMemPattern: false, enableCpuMemArena: false },',
   '        progress_callback: function (x) {',
   '          if (x && typeof x.progress === "number")',
   '            self.postMessage({ type: "progress", progress: Math.round(x.progress), label: x.file || "model" });',
@@ -1124,6 +1134,35 @@ var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
 var llmBusy = false, llmMode = null, llmAbort = false;
 var llmTokens = 0, llmStartTs = 0, llmTimer = null;
 var llmCurrentJob = null, llmJobSeq = 0;
+var llmUserPickedModel = false;
+
+function llmDeviceNoteText(device) {
+  return device === 'webgpu'
+    ? 'WebGPU detected — generating with GPU acceleration.'
+    : 'No WebGPU detected in this browser — using CPU (WASM) mode. It is slower and memory-limited, so SmolLM2 360M/135M are the safest choices. The app automatically retries with a smaller model if loading runs out of memory.';
+}
+
+// Approximate first-download sizes. Used to pick automatic out-of-memory
+// fallbacks that are always smaller than the model the user selected.
+var LLM_MODEL_MB = {
+  'onnx-community/Qwen2.5-1.5B-Instruct': 1100,
+  'onnx-community/Qwen2.5-0.5B-Instruct': 500,
+  'onnx-community/SmolLM2-360M-Instruct-ONNX': 300,
+  'onnx-community/SmolLM2-135M-Instruct-ONNX': 180,
+};
+var LLM_SMALL_FALLBACKS = [
+  'onnx-community/SmolLM2-360M-Instruct-ONNX',
+  'onnx-community/SmolLM2-135M-Instruct-ONNX',
+];
+var LLM_OOM_RE = /bad_alloc|can't create a session|out of memory|outofmemory|oom|allocation|memory/i;
+
+function shortModel(id) { return String(id || '').split('/').pop(); }
+function friendlyLLMError(message) {
+  if (LLM_OOM_RE.test(String(message || ''))) {
+    return 'The browser ran out of memory loading this model. Try the SmolLM2 360M or 135M model, close other tabs, or use Chrome/Edge with WebGPU + hardware acceleration.';
+  }
+  return message || 'unknown error';
+}
 
 function llmSetStatus(m, cls) {
   var el = $('llmStatus');
@@ -1194,6 +1233,11 @@ function runLLM() {
     user: 'INSTRUCTIONS:\n' + prompt + '\n\nTRANSCRIPT:\n' + transcript,
     maxTokens: 512,
   };
+  // If the chosen model hits an out-of-memory error, retry with progressively
+  // smaller models rather than just failing.
+  var selMb = LLM_MODEL_MB[job.model] || 9999;
+  job.fallbacks = LLM_SMALL_FALLBACKS.filter(function (m) { return LLM_MODEL_MB[m] < selMb; });
+  job.fallbackIdx = 0;
   llmCurrentJob = job;
   llmBusy = true;
   llmAbort = false;
@@ -1206,9 +1250,15 @@ function runLLM() {
   llmSetBar(0, 'Preparing AI...');
   llmSetStatus('');
   startLLMTimer();
+  startLLMJob(job);
+}
 
+/** Detect the device, (re)create the worker if needed, and send the job. */
+function startLLMJob(job) {
   detectDevice().then(function (device) {
     job.device = device;
+    var note = $('llmDeviceNote');
+    if (note) note.textContent = llmDeviceNoteText(device);
     var key = job.model + '|' + device;
     if (llmWorker && llmWorkerKey !== key) killLLMWorker();  // free memory if model/device changed
     if (!llmWorker) {
@@ -1229,6 +1279,24 @@ function runLLM() {
       system: job.system, user: job.user, maxTokens: job.maxTokens
     });
   });
+}
+
+/** Handle an error from any LLM path. Returns true if a retry was started. */
+function handleLLMError(message) {
+  var job = llmCurrentJob;
+  message = String(message || '');
+  if (job && LLM_OOM_RE.test(message) && job.fallbackIdx < job.fallbacks.length) {
+    var failed = job.model;
+    job.model = job.fallbacks[job.fallbackIdx++];
+    killLLMWorker();
+    llmTokens = 0;
+    $('llmOut').value = '';
+    llmSetBar(0, 'Retrying with a smaller AI model...');
+    llmSetStatus('Out of memory loading ' + shortModel(failed) + '. Retrying with the smaller ' + shortModel(job.model) + '...', '');
+    startLLMJob(job);
+    return true;
+  }
+  return false;
 }
 
 function makeLLMWorker() {
@@ -1255,10 +1323,11 @@ function onLLMMessage(e) {
   } else if (d.type === 'error') {
     if (llmTokens === 0) {
       killLLMWorker();
-      llmMainThread(llmCurrentJob);
+      if (handleLLMError(d.message)) return;      // OOM: retry smaller model
+      llmMainThread(llmCurrentJob);               // otherwise: in-page fallback
     } else {
       finishLLM('error');
-      llmSetStatus('AI generation failed: ' + (d.message || 'unknown error'), 'error');
+      llmSetStatus('AI generation failed: ' + friendlyLLMError(d.message), 'error');
     }
   }
 }
@@ -1267,10 +1336,11 @@ function onLLMWorkerError(e) {
   // Worker-level failure (e.g. module blocked): rerun in-page.
   if (llmTokens === 0 && llmCurrentJob) {
     killLLMWorker();
+    if (handleLLMError(e && e.message)) return;
     llmMainThread(llmCurrentJob);
   } else {
     finishLLM('error');
-    llmSetStatus('AI worker failed: ' + ((e && e.message) || 'unknown error'), 'error');
+    llmSetStatus('AI worker failed: ' + friendlyLLMError(e && e.message), 'error');
   }
 }
 
@@ -1287,6 +1357,7 @@ function llmMainThread(job) {
     return mod.pipeline('text-generation', job.model, {
       device: job.device,
       dtype: job.device === 'webgpu' ? 'q4f16' : 'q4',
+      session_options: job.device === 'webgpu' ? {} : { enableMemPattern: false, enableCpuMemArena: false },
       progress_callback: function (x) {
         if (llmAbort) return;
         if (x && typeof x.progress === 'number') llmSetBar(x.progress, 'Downloading AI model... ' + Math.round(x.progress) + '%');
@@ -1311,8 +1382,9 @@ function llmMainThread(job) {
     finishLLM('done');
   }).catch(function (err) {
     if (job.id !== llmJobSeq) return;
+    if (handleLLMError(err && err.message)) return;   // OOM: retry smaller model
     finishLLM('error');
-    llmSetStatus('AI generation failed: ' + ((err && err.message) || err), 'error');
+    llmSetStatus('AI generation failed: ' + friendlyLLMError(err && err.message), 'error');
   });
 }
 
@@ -1332,6 +1404,7 @@ function cancelLLM() {
 $('llmBtn').addEventListener('click', runLLM);
 $('llmCancel').addEventListener('click', cancelLLM);
 $('transcriptOut').addEventListener('input', updateLLMBtn);
+$('llmModel').addEventListener('change', function () { llmUserPickedModel = true; });
 
 $('copyLlm').addEventListener('click', function () {
   var t = $('llmOut');
@@ -1482,6 +1555,17 @@ Store.listRecordings().then(function (recs) {
   }
   updateLLMBtn();
   renderHistory();
+});
+
+// Report the compute device up front and, when there is no WebGPU, preselect
+// a CPU-friendly model so the first run doesn't hit an out-of-memory error
+// (the user can still change it).
+detectDevice().then(function (device) {
+  var note = $('llmDeviceNote');
+  if (note) note.textContent = llmDeviceNoteText(device);
+  if (device === 'wasm' && !llmUserPickedModel) {
+    $('llmModel').value = 'onnx-community/SmolLM2-360M-Instruct-ONNX';
+  }
 });
 </script>
 </body>

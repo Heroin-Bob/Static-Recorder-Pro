@@ -1,9 +1,9 @@
-// Static Recorder service worker: cache the app shell so the site loads and
-// keeps working offline (recordings themselves live in IndexedDB). Registered
-// only when hosted over http(s); file:// pages skip service workers entirely.
-// Whisper model weights are cached transparently by the browser's HTTP cache
-// after the first transcription.
-const CACHE = 'static-recorder-v2';
+// Static Recorder service worker: keeps the app working offline once loaded.
+// Registered only when hosted over http(s); file:// pages skip service workers.
+// Network-first for same-origin files so updates ship immediately; the cache
+// is the offline fallback. Whisper/LLM model weights are cached transparently
+// by the browser's HTTP cache after first use.
+const CACHE = 'static-recorder-v3';
 const SHELL = [
   './',
   './index.html',
@@ -26,22 +26,18 @@ self.addEventListener('activate', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  const sameOrigin = url.origin === location.origin;
   if (e.request.method !== 'GET') return;
-  if (!sameOrigin) return; // model weights (Hugging Face CDN) are left to the browser's own cache
+  if (url.origin !== location.origin) return; // model/cdn fetches use the browser cache
 
   e.respondWith(
-    caches.match(e.request).then(cached => {
-      const fetched = fetch(e.request)
-        .then(resp => {
-          if (resp && resp.ok && (resp.type === 'basic' || resp.type === 'default')) {
-            const copy = resp.clone();
-            caches.open(CACHE).then(c => c.put(e.request, copy));
-          }
-          return resp;
-        })
-        .catch(() => cached);
-      return cached || fetched;
-    })
+    fetch(e.request)
+      .then(resp => {
+        if (resp && resp.ok) {
+          const copy = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+        }
+        return resp;
+      })
+      .catch(() => caches.match(e.request).then(cached => cached || caches.match('./index.html')))
   );
 });

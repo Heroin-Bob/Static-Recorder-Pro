@@ -106,6 +106,15 @@
     font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     resize: vertical;
   }
+  .extra-label { font-size: .95rem; margin-top: 16px; display: block; color: #e2e8f0; font-weight: 600; }
+  textarea#llmPrompt {
+    width: 100%; margin-top: 6px; background: #0f172a; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: 10px; padding: 10px;
+    font: 13px/1.5 system-ui, sans-serif; resize: vertical;
+  }
+  textarea#llmPrompt:focus { outline: none; border-color: #38bdf8; }
+  #llmStatus.ok { color: #4ade80; }
+  #llmStatus.error { color: #f87171; }
   #status { margin-top: 14px; white-space: pre-wrap; min-height: 1.2em; font-size: .92rem; }
   #status.error { color: #f87171; }
   #status.ok { color: #4ade80; }
@@ -219,8 +228,55 @@
         <button type="button" class="copy-btn" id="downloadTranscript">Download .txt</button>
       </div>
     </div>
-    <textarea class="out" id="transcriptOut" rows="14" readonly spellcheck="false" placeholder="The transcript will appear here after transcription."></textarea>
+    <textarea class="out" id="transcriptOut" rows="14" spellcheck="false" placeholder="The transcript will appear here after transcription. You can edit it before asking the AI."></textarea>
   </div>
+
+  <!-- ===================== LOCAL AI ASSISTANT ===================== -->
+  <div class="tab-divider"></div>
+  <div class="area-label">AI Assistant (runs locally in your browser)</div>
+  <p class="hint" style="line-height:1.5">Uses a small language model that runs entirely on this device &mdash; no server and no API key. The transcript above is used as context; type what you want done with it. The model downloads once (~0.5&ndash;1.1 GB) and is then cached by the browser.</p>
+
+  <div class="row">
+    <label for="llmModel">AI model</label>
+    <select id="llmModel">
+      <option value="onnx-community/Qwen2.5-0.5B-Instruct" selected>Qwen2.5 0.5B (recommended, ~0.5 GB first use)</option>
+      <option value="onnx-community/SmolLM2-135M-Instruct-ONNX">SmolLM2 135M (smallest/fastest, ~0.2 GB, basic)</option>
+      <option value="onnx-community/Qwen2.5-1.5B-Instruct">Qwen2.5 1.5B (better quality, ~1.1 GB first use)</option>
+    </select>
+  </div>
+
+  <label class="extra-label" for="llmPrompt">What should the AI do with the transcript?</label>
+  <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="e.g. Write a reply email based on this conversation">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as &quot;Me&quot;.</textarea>
+  <div class="hint">Tips: "summarize the call in 5 bullets", "list the action items and who owns them", "draft a follow-up text message", "explain this to a new colleague".</div>
+
+  <div class="rec-btns" style="margin-top:14px">
+    <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
+    <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
+  </div>
+
+  <div class="progress-wrap" id="llmProgressWrap" style="display:none">
+    <div class="progress-label">
+      <span id="llmStage">Preparing...</span>
+      <span class="elapsed" id="llmElapsed"></span>
+      <span class="pct" id="llmPct">0%</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="llmFill"></div>
+    </div>
+  </div>
+
+  <div id="llmWrap" style="display:none">
+    <div class="area-label-row">
+      <div class="area-label">AI Response</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="copy-btn" id="copyLlm">Select All</button>
+        <button type="button" class="copy-btn" id="downloadLlm">Download .txt</button>
+      </div>
+    </div>
+    <textarea class="out" id="llmOut" rows="14" readonly spellcheck="false" placeholder="The AI response will appear here."></textarea>
+  </div>
+
+  <div id="llmStatus" class="hint" style="margin-top:8px"></div>
 
   <div id="status"></div>
 
@@ -911,6 +967,7 @@ function runTranscription(rec) {
     $('transcriptWrap').style.display = 'block';
     Store.saveTranscript(rec.id, text, model, device);
     renderHistory();
+    updateLLMBtn();
     setStatus('Transcription complete (' + device + ', ' + model.split('/').pop() + '). Nothing was uploaded.', 'ok');
   }).catch(function (err) {
     stopElapsed();
@@ -1003,6 +1060,305 @@ $('downloadTranscript').addEventListener('click', function () {
   if (text) downloadBlob(new Blob([text], { type: 'text/plain' }), 'transcript-' + tsNowStamp() + '.txt');
 });
 
+/* =========================================================================
+   Local AI assistant: a small instruct LLM (Qwen2.5) running in the browser.
+   The transcript is passed as context with the user's instruction. The model
+   lives in a blob worker (same file://-safe technique as the ASR worker) and
+   is kept warm between generations. Cancel terminates the worker immediately.
+   ========================================================================= */
+var LLMWorkerSrc = [
+  'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
+  'var piped = null, pipedKey = null;',
+  'self.onmessage = async function (e) {',
+  '  var d = e.data || {};',
+  '  if (d.type === "ping") { self.postMessage({ type: "ready" }); return; }',
+  '  if (d.type !== "generate") return;',
+  '  try {',
+  '    var mod = await import(TF_URL);',
+  '    var key = d.model + "|" + d.device;',
+  '    if (!piped || pipedKey !== key) {',
+  '      self.postMessage({ type: "loading" });',
+  '      piped = await mod.pipeline("text-generation", d.model, {',
+  '        device: d.device,',
+  '        dtype: d.device === "webgpu" ? "q4f16" : "q4",',
+  '        progress_callback: function (x) {',
+  '          if (x && typeof x.progress === "number")',
+  '            self.postMessage({ type: "progress", progress: Math.round(x.progress), label: x.file || "model" });',
+  '          else if (x && x.status === "done")',
+  '            self.postMessage({ type: "progress", progress: 100, label: x.file || "model" });',
+  '        }',
+  '      });',
+  '      pipedKey = key;',
+  '    }',
+  '    self.postMessage({ type: "generating" });',
+  '    var streamer = new mod.TextStreamer(piped.tokenizer, {',
+  '      skip_prompt: true,',
+  '      skip_special_tokens: true,',
+  '      callback_function: function (text) { self.postMessage({ type: "token", text: text }); }',
+  '    });',
+  '    await piped(',
+  '      [',
+  '        { role: "system", content: d.system },',
+  '        { role: "user", content: d.user }',
+  '      ],',
+  '      {',
+  '        max_new_tokens: d.maxTokens || 512,',
+  '        do_sample: true,',
+  '        temperature: 0.7,',
+  '        top_p: 0.9,',
+  '        repetition_penalty: 1.1,',
+  '        streamer: streamer',
+  '      }',
+  '    );',
+  '    self.postMessage({ type: "complete" });',
+  '  } catch (err) {',
+  '    self.postMessage({ type: "error", message: String((err && err.message) || err) });',
+  '  }',
+  '};'
+].join('\n');
+
+var LLM_SYSTEM = 'You are a helpful assistant working with a transcript of a call. ' +
+  'Answer using only the transcript. Do not invent facts. Write plain text without markdown.';
+
+var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
+var llmBusy = false, llmMode = null, llmAbort = false;
+var llmTokens = 0, llmStartTs = 0, llmTimer = null;
+var llmCurrentJob = null, llmJobSeq = 0;
+
+function llmSetStatus(m, cls) {
+  var el = $('llmStatus');
+  el.className = 'hint' + (cls ? ' ' + cls : '');
+  el.textContent = m;
+}
+function llmSetBar(p, label) {
+  p = Math.max(0, Math.min(100, p));
+  $('llmFill').style.width = p + '%';
+  $('llmPct').textContent = Math.round(p) + '%';
+  if (label) $('llmStage').textContent = label;
+}
+function updateLLMBtn() {
+  $('llmBtn').disabled = llmBusy || !$('transcriptOut').value.trim();
+}
+function killLLMWorker() {
+  if (llmWorker) { try { llmWorker.terminate(); } catch (e) {} }
+  if (llmWorkerUrl) { try { URL.revokeObjectURL(llmWorkerUrl); } catch (e) {} }
+  llmWorker = null; llmWorkerUrl = null; llmWorkerKey = null;
+}
+
+function startLLMTimer() {
+  llmStartTs = Date.now();
+  $('llmElapsed').textContent = '0s';
+  clearInterval(llmTimer);
+  llmTimer = setInterval(function () {
+    $('llmElapsed').textContent = fmtElapsed((Date.now() - llmStartTs) / 1000);
+  }, 250);
+}
+function stopLLMTimer() { clearInterval(llmTimer); llmTimer = null; }
+
+function appendLLMToken(jobId, text) {
+  if (jobId !== llmJobSeq || llmAbort) return;
+  llmTokens++;
+  $('llmOut').value += text;
+  $('llmOut').scrollTop = $('llmOut').scrollHeight;
+  $('llmStage').textContent = 'Generating... ' + llmTokens + ' tokens';
+}
+
+function finishLLM(result) {
+  // result: 'done' | 'cancelled' | 'error'
+  stopLLMTimer();
+  llmBusy = false;
+  llmMode = null;
+  $('llmCancel').disabled = true;
+  $('llmProgressWrap').style.display = 'none';
+  updateLLMBtn();
+  if (result === 'done') {
+    var secs = (Date.now() - llmStartTs) / 1000;
+    llmSetStatus('Done — ' + llmTokens + ' tokens in ' + fmtElapsed(secs) + '. Generated locally in your browser; nothing was uploaded.', 'ok');
+  } else if (result === 'cancelled') {
+    llmSetStatus('Generation cancelled.' + ($('llmOut').value ? ' Partial output kept above.' : ''), '');
+  }
+}
+
+function runLLM() {
+  if (llmBusy) return;
+  var transcript = $('transcriptOut').value.trim();
+  if (!transcript) {
+    llmSetStatus('Transcribe something first, or load a past transcript from the History tab.', 'error');
+    return;
+  }
+  var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
+  var job = {
+    id: ++llmJobSeq,
+    model: $('llmModel').value,
+    system: LLM_SYSTEM,
+    user: 'INSTRUCTIONS:\n' + prompt + '\n\nTRANSCRIPT:\n' + transcript,
+    maxTokens: 512,
+  };
+  llmCurrentJob = job;
+  llmBusy = true;
+  llmAbort = false;
+  llmTokens = 0;
+  updateLLMBtn();
+  $('llmCancel').disabled = false;
+  $('llmWrap').style.display = 'block';
+  $('llmOut').value = '';
+  $('llmProgressWrap').style.display = 'block';
+  llmSetBar(0, 'Preparing AI...');
+  llmSetStatus('');
+  startLLMTimer();
+
+  detectDevice().then(function (device) {
+    job.device = device;
+    var key = job.model + '|' + device;
+    if (llmWorker && llmWorkerKey !== key) killLLMWorker();  // free memory if model/device changed
+    if (!llmWorker) {
+      try {
+        var made = makeLLMWorker();
+        llmWorker = made.worker;
+        llmWorkerUrl = made.url;
+        llmWorkerKey = key;
+        llmWorker.onmessage = onLLMMessage;
+        llmWorker.onerror = onLLMWorkerError;
+      } catch (e) {
+        return llmMainThread(job);   // blob workers unavailable: run in-page
+      }
+    }
+    llmMode = 'worker';
+    llmWorker.postMessage({
+      type: 'generate', model: job.model, device: device,
+      system: job.system, user: job.user, maxTokens: job.maxTokens
+    });
+  });
+}
+
+function makeLLMWorker() {
+  var url = URL.createObjectURL(new Blob([LLMWorkerSrc], { type: 'text/javascript' }));
+  var w = new Worker(url);
+  return { worker: w, url: url };
+}
+
+function onLLMMessage(e) {
+  var d = e.data || {};
+  if (llmAbort) return;
+  if (d.type === 'loading') {
+    llmSetBar(0, 'Loading AI model (first use downloads it)...');
+  } else if (d.type === 'progress') {
+    if (d.progress >= 100) llmSetBar(100, 'Initializing AI model...');
+    else llmSetBar(d.progress, 'Downloading AI model... ' + d.progress + '%');
+  } else if (d.type === 'generating') {
+    llmSetBar(100, 'Generating... 0 tokens');
+    llmSetStatus('Model ready. Generating locally...', '');
+  } else if (d.type === 'token') {
+    appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
+  } else if (d.type === 'complete') {
+    finishLLM(llmAbort ? 'cancelled' : 'done');
+  } else if (d.type === 'error') {
+    if (llmTokens === 0) {
+      killLLMWorker();
+      llmMainThread(llmCurrentJob);
+    } else {
+      finishLLM('error');
+      llmSetStatus('AI generation failed: ' + (d.message || 'unknown error'), 'error');
+    }
+  }
+}
+
+function onLLMWorkerError(e) {
+  // Worker-level failure (e.g. module blocked): rerun in-page.
+  if (llmTokens === 0 && llmCurrentJob) {
+    killLLMWorker();
+    llmMainThread(llmCurrentJob);
+  } else {
+    finishLLM('error');
+    llmSetStatus('AI worker failed: ' + ((e && e.message) || 'unknown error'), 'error');
+  }
+}
+
+/** In-page fallback if blob workers are unavailable. The page may stutter
+ *  while generating; cancel stops appending immediately but the current
+ *  model step can't be interrupted. */
+function llmMainThread(job) {
+  if (!job) return;
+  llmMode = 'main';
+  llmSetStatus('Running AI on the main thread (worker unavailable) — the page may be less responsive.', '');
+  var modRef = null;
+  transformersModule().then(function (mod) {
+    modRef = mod;
+    return mod.pipeline('text-generation', job.model, {
+      device: job.device,
+      dtype: job.device === 'webgpu' ? 'q4f16' : 'q4',
+      progress_callback: function (x) {
+        if (llmAbort) return;
+        if (x && typeof x.progress === 'number') llmSetBar(x.progress, 'Downloading AI model... ' + Math.round(x.progress) + '%');
+        else if (x && x.status === 'done') llmSetBar(100, 'Initializing AI model...');
+      }
+    });
+  }).then(function (piped) {
+    if (llmAbort) { finishLLM('cancelled'); return; }
+    llmSetBar(100, 'Generating... 0 tokens');
+    var streamer = new modRef.TextStreamer(piped.tokenizer, {
+      skip_prompt: true,
+      skip_special_tokens: true,
+      callback_function: function (text) { appendLLMToken(job.id, text); }
+    });
+    return piped(
+      [{ role: 'system', content: job.system }, { role: 'user', content: job.user }],
+      { max_new_tokens: job.maxTokens || 512, do_sample: true, temperature: 0.7, top_p: 0.9, repetition_penalty: 1.1, streamer: streamer }
+    );
+  }).then(function () {
+    if (job.id !== llmJobSeq) return;      // superseded/cancelled
+    if (llmAbort) { finishLLM('cancelled'); return; }
+    finishLLM('done');
+  }).catch(function (err) {
+    if (job.id !== llmJobSeq) return;
+    finishLLM('error');
+    llmSetStatus('AI generation failed: ' + ((err && err.message) || err), 'error');
+  });
+}
+
+function cancelLLM() {
+  if (!llmBusy) return;
+  if (llmMode === 'worker') {
+    killLLMWorker();
+    finishLLM('cancelled');
+    return;
+  }
+  // Main-thread generation cannot be interrupted mid-step; stop collecting
+  // its output now and let it wind down.
+  llmAbort = true;
+  llmSetStatus('Cancelling...', '');
+}
+
+$('llmBtn').addEventListener('click', runLLM);
+$('llmCancel').addEventListener('click', cancelLLM);
+$('transcriptOut').addEventListener('input', updateLLMBtn);
+
+$('copyLlm').addEventListener('click', function () {
+  var t = $('llmOut');
+  t.focus(); t.select();
+  try { document.execCommand('copy'); llmSetStatus('AI response copied to clipboard.', 'ok'); } catch (e) {}
+  t.setSelectionRange(0, 0);
+});
+$('downloadLlm').addEventListener('click', function () {
+  var text = $('llmOut').value;
+  if (text) downloadBlob(new Blob([text], { type: 'text/plain' }), 'ai-response-' + tsNowStamp() + '.txt');
+});
+
+/** Load a past transcript into the shared transcript box so the AI (or a new
+ *  transcription) can work on it. Called from History. */
+function loadTranscriptIntoAI(text, autoRun) {
+  $('transcriptOut').value = text;
+  $('transcriptWrap').style.display = 'block';
+  updateLLMBtn();
+  if (autoRun) {
+    runLLM();
+  } else {
+    setStatus('Transcript loaded from history. Edit the prompt below if needed, then press "Generate with AI".', 'ok');
+  }
+  var target = $('llmPrompt');
+  if (target && target.scrollIntoView) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 /* ---------- History ---------- */
 function fmtDur(sec) {
   if (!sec) return '';
@@ -1069,6 +1425,14 @@ function renderHistItem(rec, transcript) {
     setTab('recorder');
     runTranscription(rec);
   }));
+  if (transcript && transcript.text) {
+    actions.appendChild(mkHistBtn('Use Transcript', '', function () {
+      loadTranscriptIntoAI(transcript.text, false);
+    }));
+    actions.appendChild(mkHistBtn('AI Draft', 'green', function () {
+      loadTranscriptIntoAI(transcript.text, true);
+    }));
+  }
   actions.appendChild(mkHistBtn('Delete', 'red', function () {
     if (!confirm('Delete this recording (audio + transcript) from this browser?')) return;
     Store.deleteRecording(rec.id).then(function () {
@@ -1094,6 +1458,8 @@ $('historyClear').addEventListener('click', function () {
     latestRecordingId = null;
     $('transcribeBtn').disabled = true;
     $('transcriptWrap').style.display = 'none';
+    $('transcriptOut').value = '';
+    updateLLMBtn();
     renderHistory();
     setStatus('All local data cleared.', 'ok');
   });
@@ -1114,6 +1480,7 @@ Store.listRecordings().then(function (recs) {
     latestRecordingId = recs[0].id;
     $('transcribeBtn').disabled = false;
   }
+  updateLLMBtn();
   renderHistory();
 });
 </script>

@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Static Recorder - Local Audio Recorder &amp; Transcriber</title>
+<meta name="description" content="Record your microphone and computer audio, then transcribe it entirely in your browser. Nothing is uploaded. Works by double-clicking this file (no server needed).">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style>
+  * { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: #0f172a; color: #e2e8f0; min-height: 100vh;
+    margin: 0; display: flex; align-items: flex-start; justify-content: center;
+    padding: 24px 12px;
+  }
+  .card {
+    background: #1e293b; border-radius: 16px; padding: 32px;
+    max-width: 680px; width: 100%; box-shadow: 0 20px 50px rgba(0,0,0,.4);
+  }
+  h1 { margin: 0 0 6px; font-size: 1.6rem; color: #f8fafc; }
+  .sub { margin: 0 0 8px; font-size: .92rem; color: #cbd5e1; line-height: 1.55; }
+  .hint { font-size: .8rem; color: #94a3b8; margin-top: 4px; }
+  .elapsed { font-size: .85rem; color: #94a3b8; font-variant-numeric: tabular-nums; }
+  .tabs { display: flex; gap: 6px; margin: 18px 0 0; border-bottom: 1px solid #334155; }
+  .tab {
+    padding: 10px 16px; border-radius: 10px 10px 0 0; cursor: pointer;
+    background: #0f172a; color: #94a3b8; font-size: .9rem; font-weight: 600;
+    border: 1px solid transparent; border-bottom: none; user-select: none;
+  }
+  .tab:hover { color: #e2e8f0; }
+  .tab.active { background: #1e293b; color: #38bdf8; border-color: #334155; }
+  .tab-pane { display: none; padding: 18px 0 4px; }
+  .tab-pane.active { display: block; }
+  .tab-divider { border-top: 1px solid #334155; margin: 20px 0 16px; }
+  .rec-ind { display: none; align-items: center; gap: 8px; margin: 12px 0; color: #f87171; font-weight: 700; }
+  .rec-ind .dot { width: 11px; height: 11px; border-radius: 50%; background: #ef4444; animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+  .meters { margin: 14px 0; }
+  .meter-row { margin: 8px 0; }
+  .meter-label { display: flex; justify-content: space-between; font-size: .82rem; color: #94a3b8; margin-bottom: 4px; }
+  .meter-track { height: 10px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; overflow: hidden; }
+  .meter-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #22d3ee, #38bdf8); border-radius: 6px; transition: width .05s linear; }
+  .rec-btns { display: flex; gap: 10px; }
+  .rec-btns button { flex: 1; }
+  button {
+    padding: 12px 14px; font-size: .95rem; border: none; border-radius: 10px;
+    cursor: pointer; font-weight: 700;
+  }
+  button:disabled { background: #475569; color: #94a3b8; cursor: not-allowed; }
+  .btn-green { background: #22c55e; color: #052e16; }
+  .btn-green:hover:not(:disabled) { background: #4ade80; }
+  .btn-amber { background: #f59e0b; color: #431407; }
+  .btn-amber:hover:not(:disabled) { background: #fbbf24; }
+  .btn-red { background: #ef4444; color: #450a0a; }
+  .btn-red:hover:not(:disabled) { background: #f87171; }
+  .file-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    background: #0f172a; border: 1px solid #334155; border-radius: 10px;
+    padding: 10px 14px; margin-top: 8px; font-size: .9rem; flex-wrap: wrap;
+  }
+  .file-item .fname { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .85rem; }
+  .file-item .fsize { color: #94a3b8; font-size: .78rem; }
+  .file-item .fcontrols { display: flex; align-items: center; gap: 8px; }
+  .file-item audio { height: 34px; max-width: 220px; }
+  .file-item .mini, .mini {
+    padding: 6px 12px; font-size: .8rem; border-radius: 8px;
+    background: #1e293b; color: #e2e8f0; border: 1px solid #334155; width: auto;
+  }
+  .file-item .mini:hover, .mini:hover { color: #38bdf8; border-color: #38bdf8; }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 0 6px; }
+  .row label { font-size: .95rem; font-weight: 600; }
+  select#model {
+    background: #0f172a; color: #e2e8f0; border: 1px solid #334155;
+    border-radius: 8px; padding: 8px 10px; font-size: .9rem; max-width: 70%;
+  }
+  .progress-wrap { margin-top: 14px; display: none; }
+  .progress-label {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 6px; font-size: .9rem; gap: 8px;
+  }
+  .pct { font-weight: 700; color: #38bdf8; min-width: 44px; text-align: right; }
+  .progress-bar {
+    height: 18px; background: #0f172a; border-radius: 10px; overflow: hidden;
+    position: relative; border: 1px solid #334155;
+  }
+  .progress-fill {
+    height: 100%; width: 0%; border-radius: 10px;
+    background: linear-gradient(90deg, #38bdf8, #22d3ee);
+    transition: width .3s ease;
+  }
+  .area-label {
+    font-size: .85rem; color: #94a3b8; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .04em;
+  }
+  .area-label-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
+  .copy-btn {
+    background: #1e293b; color: #94a3b8; border: 1px solid #334155;
+    border-radius: 8px; padding: 4px 12px; font-size: .8rem; cursor: pointer;
+    font-weight: 600; width: auto;
+  }
+  .copy-btn:hover { color: #e2e8f0; border-color: #475569; }
+  textarea.out {
+    width: 100%; margin-top: 6px; background: #0f172a; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: 10px; padding: 10px;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    resize: vertical;
+  }
+  #status { margin-top: 14px; white-space: pre-wrap; min-height: 1.2em; font-size: .92rem; }
+  #status.error { color: #f87171; }
+  #status.ok { color: #4ade80; }
+  .history-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+  .hist-item {
+    background: #0f172a; border: 1px solid #334155; border-radius: 10px;
+    padding: 14px 16px; margin-top: 8px;
+  }
+  .hist-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .hist-name { font-weight: 700; color: #f8fafc; font-size: 1rem; }
+  .hist-meta { font-size: .8rem; color: #94a3b8; margin-top: 2px; }
+  .hist-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .hist-actions .mini.green { background: #14532d; border-color: #22c55e; color: #bbf7d0; }
+  .hist-actions .mini.green:hover { background: #166534; }
+  .hist-actions .mini.red { background: #450a0a; color: #fecaca; border-color: #7f1d1d; }
+  .hist-actions .mini.red:hover { background: #7f1d1d; }
+  .hist-transcript {
+    margin-top: 8px; background: #0f172a; color: #94a3b8;
+    border: 1px dashed #334155; border-radius: 8px; padding: 8px 12px;
+    font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace;
+    max-height: 120px; overflow-y: auto; white-space: pre-wrap;
+  }
+  .meta { font-size: .8rem; color: #64748b; margin-top: 22px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Static Recorder</h1>
+  <p class="sub">Records your microphone (Agent) and computer system audio (Caller) as two tracks of one call, saves them on this device, and transcribes them 100% in your browser. <b>No server, no upload, no API key.</b></p>
+
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="recorder">Recorder</div>
+    <div class="tab" data-tab="history">History</div>
+  </div>
+
+  <!-- ===================== RECORDER TAB ===================== -->
+  <div class="tab-pane active" id="pane-recorder">
+    <p class="hint" style="line-height:1.5">On <b>Start</b>, allow the microphone, then pick the tab/window with the call (choose &ldquo;Share system audio&rdquo; / <i>Include audio</i>). Recording needs this page opened over HTTPS <i>or via the local file (double-click)</i>.</p>
+
+    <div class="rec-ind" id="recInd"><span class="dot"></span> Recording... <span class="elapsed" id="recElapsed">0s</span></div>
+
+    <div class="meters">
+      <div class="meter-row">
+        <div class="meter-label"><span>Input (your mic)</span><span id="recInPct">0%</span></div>
+        <div class="meter-track"><div class="meter-fill" id="recMeterIn"></div></div>
+      </div>
+      <div class="meter-row">
+        <div class="meter-label"><span>Output (caller)</span><span id="recOutPct">0%</span></div>
+        <div class="meter-track"><div class="meter-fill" id="recMeterOut"></div></div>
+      </div>
+    </div>
+
+    <div class="rec-btns">
+      <button type="button" id="recStart" class="btn-green">Start Recording</button>
+      <button type="button" id="recStop" class="btn-red" disabled>Stop</button>
+    </div>
+
+    <div id="recAfter" style="display:none">
+      <div id="recFiles"></div>
+      <p class="hint" id="recSavedNote" style="display:none">Saved to this browser's storage (History tab). Stays on this device until you delete it.</p>
+    </div>
+    <div id="recStatus"></div>
+  </div>
+
+  <!-- ===================== HISTORY TAB ===================== -->
+  <div class="tab-pane" id="pane-history">
+    <div class="history-head">
+      <span class="hint">Recordings are stored in this browser (IndexedDB) and transcribed locally.</span>
+      <div style="display:flex;gap:8px">
+        <button type="button" id="historyRefresh" class="btn-amber" style="padding:8px 14px;width:auto">Refresh</button>
+        <button type="button" id="historyClear" class="btn-red" style="padding:8px 14px;width:auto">Clear All</button>
+      </div>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <div class="tab-divider"></div>
+
+  <!-- ===================== TRANSCRIBE SECTION ===================== -->
+  <div class="row">
+    <label for="model">Whisper model</label>
+    <select id="model">
+      <option value="onnx-community/whisper-tiny.en">tiny (fastest, ~40 MB)</option>
+      <option value="onnx-community/whisper-base.en" selected>base (balanced, ~40-90 MB)</option>
+      <option value="onnx-community/whisper-small.en">small (accurate, ~150-230 MB)</option>
+    </select>
+  </div>
+  <div class="hint">The model is downloaded from Hugging Face on first use (needs internet once), then cached by the browser. Larger models are more accurate but slower.</div>
+
+  <div class="rec-btns" style="margin-top:14px">
+    <button type="button" id="transcribeBtn" class="btn-green" disabled>Transcribe Latest</button>
+    <button type="button" id="transcribeCancel" class="btn-red" disabled>Cancel</button>
+  </div>
+
+  <div class="progress-wrap" id="progressWrap" style="display:none">
+    <div class="progress-label">
+      <span id="stage">Preparing...</span>
+      <span class="elapsed" id="elapsed"></span>
+      <span class="pct" id="pct">0%</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="fill"></div>
+    </div>
+  </div>
+
+  <div id="transcriptWrap" style="display:none">
+    <div class="area-label-row">
+      <div class="area-label">Transcript</div>
+      <div style="display:flex;gap:8px">
+        <button type="button" class="copy-btn" id="copyTranscript">Select All</button>
+        <button type="button" class="copy-btn" id="downloadTranscript">Download .txt</button>
+      </div>
+    </div>
+    <textarea class="out" id="transcriptOut" rows="14" readonly spellcheck="false" placeholder="The transcript will appear here after transcription."></textarea>
+  </div>
+
+  <div id="status"></div>
+
+  <p class="meta">Works from a local file (double-click) or any static host. Best in Chrome/Edge (WebGPU), Firefox and Safari also work (slower WASM). iPhones cannot capture system audio — the microphone still works. Audio never leaves this device.</p>
+</div>
+
+<script>
+"use strict";
+/* =========================================================================
+   Static Recorder - single-file, serverless. No ES modules, no file workers:
+   runs by double-clicking this file. Transcriptions use Transformers.js
+   loaded from a CDN (CORS-enabled) on first use.
+   ========================================================================= */
+
+var $ = function (id) { return document.getElementById(id); };
+
+/* ---------------------------------------------------------------------------
+   Small helpers
+--------------------------------------------------------------------------- */
+function tsNowStamp() {
+  var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+         p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function fmtElapsed(totalSec) {
+  totalSec = Math.floor(totalSec);
+  var h = Math.floor(totalSec / 3600), m = Math.floor((totalSec % 3600) / 60), s = totalSec % 60;
+  if (h > 0) return h + 'h ' + m + 'm ' + s + 's';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+function fmtTimestamp(t) {
+  var ms = Math.round(t * 1000);
+  var h = Math.floor(ms / 3600000), rem = ms % 3600000;
+  var m = Math.floor(rem / 60000), s = Math.floor((rem % 60000) / 1000), r = ms % 1000;
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' +
+         String(s).padStart(2, '0') + '.' + String(r).padStart(3, '0');
+}
+function uid() {
+  return (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+function downloadBlob(blob, filename) {
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+}
+function wavDurationSeconds(blob) {
+  return Math.max(0, (blob.size - 44) / 32000);  // 16 kHz mono PCM16
+}
+
+/* ---------------------------------------------------------------------------
+   WAV conversion (16 kHz mono)
+--------------------------------------------------------------------------- */
+function toF32(audioBuf) {
+  var rate = 16000, ratio = audioBuf.sampleRate / rate;
+  var outLen = Math.round(audioBuf.length / ratio);
+  var out = new Float32Array(outLen);
+  var nCh = audioBuf.numberOfChannels;
+  for (var i = 0; i < outLen; i++) {
+    var idx = Math.floor(i * ratio);
+    var v = audioBuf.getChannelData(0)[idx];
+    for (var c = 1; c < nCh; c++) v += audioBuf.getChannelData(c)[idx];
+    if (nCh > 1) v /= nCh;
+    out[i] = v;
+  }
+  return out;
+}
+
+function encodeWav(out) {
+  var ch = 1, rate = 16000, len = out.length;
+  var buffer = new ArrayBuffer(44 + len * 2);
+  var view = new DataView(buffer);
+  var wstr = function (o, s) { for (var i = 0; i < s.length; i++) view.setUint8(o + i, s.charCodeAt(i)); };
+  wstr(0, 'RIFF'); view.setUint32(4, 36 + len * 2, true); wstr(8, 'WAVE');
+  wstr(12, 'fmt '); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, ch, true);
+  view.setUint32(24, rate, true); view.setUint32(28, rate * ch * 2, true); view.setUint16(32, ch * 2, true); view.setUint16(34, 16, true);
+  wstr(36, 'data'); view.setUint32(40, len * 2, true);
+  var off = 44;
+  for (var i = 0; i < len; i++, off += 2) {
+    var s = Math.max(-1, Math.min(1, out[i]));
+    view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+  return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function decodeAudio(blob) {
+  var ctx = new (window.AudioContext || window.webkitAudioContext)();
+  return blob.arrayBuffer().then(function (buf) { return ctx.decodeAudioData(buf); })
+    .then(function (a) { if (ctx.close) ctx.close(); return a; },
+          function (e) { if (ctx.close) ctx.close(); throw e; });
+}
+
+/** webm/opus blob -> 16 kHz mono WAV blob */
+function blobToWav16k(blob) {
+  return decodeAudio(blob).then(function (ab) { return encodeWav(toF32(ab)); });
+}
+/** WAV blob -> 16 kHz mono Float32Array (for whisper) */
+function wavToF32(blob) {
+  return decodeAudio(blob).then(function (ab) { return toF32(ab); });
+}
+
+/* ---------------------------------------------------------------------------
+   Storage (IndexedDB with in-memory fallback so file:// quirks never block)
+--------------------------------------------------------------------------- */
+var Store = (function () {
+  var db = null, memory = [], memOk = false, useMemory = false;
+  function open() {
+    return new Promise(function (resolve, reject) {
+      var req = indexedDB.open('static-recorder', 1);
+      req.onupgradeneeded = function () {
+        var d = req.result;
+        if (!d.objectStoreNames.contains('recordings')) {
+          var s = d.createObjectStore('recordings', { keyPath: 'id' });
+          s.createIndex('ts', 'ts');
+        }
+        if (!d.objectStoreNames.contains('transcripts')) {
+          var s2 = d.createObjectStore('transcripts', { keyPath: 'id' });
+          s2.createIndex('recordingId', 'recordingId');
+        }
+      };
+      req.onsuccess = function () { resolve(req.result); };
+      req.onerror = function () { reject(req.error); };
+    });
+  }
+  function go() {
+    if (useMemory) return Promise.resolve(null);
+    if (db) return Promise.resolve(db);
+    return open().then(function (d) { db = d; return d; }).catch(function () {
+      useMemory = true;   // IDB blocked/absent: keep recordings in memory
+      return null;
+    });
+  }
+  function getStore(name, mode) {
+    return go().then(function (d) {
+      if (!d) return null;
+      return d.transaction(name, mode).objectStore(name);
+    });
+  }
+  return {
+    isPersistent: function () { return !useMemory; },
+    saveRecording: function (rec) {
+      return getStore('recordings', 'readwrite').then(function (s) {
+        if (s) { s.put(rec); return rec; }
+        memory.unshift(rec);
+        return rec;
+      });
+    },
+    listRecordings: function () {
+      return getStore('recordings', 'readonly').then(function (s) {
+        if (!s) return memory.slice().sort(function (a, b) { return b.ts - a.ts; });
+        return new Promise(function (res, rej) {
+          var r = s.getAll();
+          r.onsuccess = function () { res(r.result.sort(function (a, b) { return b.ts - a.ts; })); };
+          r.onerror = function () { rej(r.error); };
+        });
+      });
+    },
+    deleteRecording: function (id) {
+      return go().then(function (d) {
+        if (!d) { memory = memory.filter(function (r) { return r.id !== id; }); return; }
+        return new Promise(function (resolve, reject) {
+          var t = d.transaction(['recordings', 'transcripts'], 'readwrite');
+          t.objectStore('recordings').delete(id);
+          var t2 = t.objectStore('transcripts');
+          t2.index('recordingId').openCursor(IDBKeyRange.only(id)).onsuccess = function (e) {
+            var cur = e.target.result;
+            if (cur) { t2.delete(cur.primaryKey); cur.continue(); }
+          };
+          t.oncomplete = resolve;
+          t.onerror = function () { reject(t.error); };
+        });
+      });
+    },
+    clearAll: function () {
+      memory = [];
+      return go().then(function (d) {
+        if (!d) return;
+        return new Promise(function (resolve, reject) {
+          var t = d.transaction(['recordings', 'transcripts'], 'readwrite');
+          t.objectStore('recordings').clear();
+          t.objectStore('transcripts').clear();
+          t.oncomplete = resolve;
+          t.onerror = function () { reject(t.error); };
+        });
+      });
+    },
+    saveTranscript: function (recordingId, text, model, device) {
+      var rec = { id: recordingId, recordingId: recordingId, text: text, model: model, device: device, ts: Date.now() };
+      return getStore('transcripts', 'readwrite').then(function (s) {
+        if (s) s.put(rec);
+        return rec;
+      });
+    },
+    getTranscript: function (recordingId) {
+      return getStore('transcripts', 'readonly').then(function (s) {
+        if (!s) return null;
+        return new Promise(function (res, rej) {
+          var r = s.get(recordingId);
+          r.onsuccess = function () { res(r.result || null); };
+          r.onerror = function () { rej(r.error); };
+        });
+      });
+    }
+  };
+})();
+
+/* ---------------------------------------------------------------------------
+   Recorder: mic (input) + system audio (output), real-time meters
+--------------------------------------------------------------------------- */
+var Recorder = (function () {
+  var mic = null, out = null, micRec = null, outRec = null;
+  var micChunks = [], outChunks = [], recording = false, startT = 0;
+  var actx = null, analysers = null, timer = null, meterRaf = null;
+  var onStatus, onStopped;
+
+  function meter(an, fillEl, pctEl) {
+    var buf = new Uint8Array(an.fftSize);
+    an.getByteTimeDomainData(buf);
+    var sum = 0;
+    for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+    var pct = Math.min(100, Math.round(Math.sqrt(sum / buf.length) * 100 * 2.2));
+    fillEl.style.width = pct + '%';
+    pctEl.textContent = pct + '%';
+  }
+  function meterLoop() {
+    if (!recording) return;
+    meter(analysers.in, $('recMeterIn'), $('recInPct'));
+    meter(analysers.out, $('recMeterOut'), $('recOutPct'));
+    meterRaf = requestAnimationFrame(meterLoop);
+  }
+  function stopTracks() {
+    [mic, out].forEach(function (s) { if (s) s.getTracks().forEach(function (t) { t.stop(); }); });
+    mic = null; out = null;
+  }
+  function pickMime() {
+    var c = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'];
+    for (var i = 0; i < c.length; i++) if (window.MediaRecorder && MediaRecorder.isTypeSupported(c[i])) return c[i];
+    return '';
+  }
+  function start() {
+    onStatus('', '');
+    micChunks = []; outChunks = [];
+    $('recStart').disabled = true; $('recStop').disabled = false;
+    $('recAfter').style.display = 'none';
+    $('recFiles').innerHTML = '';
+    $('recSavedNote').style.display = 'none';
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      onStatus('This browser does not support media capture. Try Chrome/Edge/Firefox.', 'error');
+      $('recStart').disabled = false; $('recStop').disabled = true;
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+    }).then(function (m) {
+      mic = m;
+      return navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    }).then(function (o) {
+      out = o;
+      if (!out.getAudioTracks()[0]) {
+        stopTracks();
+        onStatus('No audio selected for output. Share the call tab/window and include system audio.', 'error');
+        reset();
+        return;
+      }
+      actx = new (window.AudioContext || window.webkitAudioContext)();
+      analysers = {
+        in: new AnalyserNode(actx, { fftSize: 1024 }),
+        out: new AnalyserNode(actx, { fftSize: 1024 })
+      };
+      actx.createMediaStreamSource(mic).connect(analysers.in);
+      actx.createMediaStreamSource(new MediaStream([out.getAudioTracks()[0]])).connect(analysers.out);
+      actx.resume();
+
+      recording = true;
+      meterLoop();
+
+      var mime = pickMime();
+      var opts = mime ? { mimeType: mime } : undefined;
+      micRec = new MediaRecorder(new MediaStream([mic.getAudioTracks()[0]]), opts);
+      outRec = new MediaRecorder(new MediaStream([out.getAudioTracks()[0]]), opts);
+      micRec.ondataavailable = function (e) { if (e.data.size) micChunks.push(e.data); };
+      outRec.ondataavailable = function (e) { if (e.data.size) outChunks.push(e.data); };
+      micRec.start(); outRec.start();
+
+      startT = Date.now();
+      clearInterval(timer);
+      timer = setInterval(function () { $('recElapsed').textContent = Math.floor((Date.now() - startT) / 1000) + 's'; }, 250);
+      $('recInd').style.display = 'flex';
+      onStatus('Recording. Speak now.', 'ok');
+    }).catch(function (e) {
+      stopTracks();
+      onStatus('Could not start capture: ' + (e && e.name === 'NotAllowedError' ? 'permission denied. Allow mic + screen share.' : (e && e.message) || e), 'error');
+      reset();
+    });
+  }
+  function reset() {
+    recording = false;
+    $('recStart').disabled = false; $('recStop').disabled = true;
+  }
+  function stop() {
+    recording = false;
+    clearInterval(timer);
+    cancelAnimationFrame(meterRaf);
+    $('recInd').style.display = 'none';
+    $('recMeterIn').style.width = '0%'; $('recMeterOut').style.width = '0%';
+    $('recInPct').textContent = '0%'; $('recOutPct').textContent = '0%';
+    reset();
+    onStatus('Finalizing audio...');
+    if (!micRec || !outRec) { reset(); return; }
+
+    var wait = function (r) { return new Promise(function (res) { r.addEventListener('stop', res, { once: true }); }); };
+    micRec.stop(); outRec.stop();
+    Promise.all([wait(micRec), wait(outRec)]).then(function () {
+      stopTracks();
+      if (actx && actx.close) actx.close();
+      actx = null; analysers = null;
+
+      var base = tsNowStamp() + '-' + String(Date.now()).slice(-4);
+      var jobs = [];
+      if (micChunks.length) jobs.push({ key: 'input', chunks: micChunks, mime: micRec.mimeType, name: base + '-input.wav' });
+      if (outChunks.length) jobs.push({ key: 'output', chunks: outChunks, mime: outRec.mimeType, name: base + '-output.wav' });
+      Promise.all(jobs.map(function (j) {
+        return blobToWav16k(new Blob(j.chunks, j.mime ? { type: j.mime } : undefined))
+          .then(function (wav) { return { key: j.key, blob: wav, name: j.name }; });
+      })).then(function (files) {
+        var tracks = {};
+        files.forEach(function (f) { tracks[f.key] = { blob: f.blob, name: f.name }; });
+        if (!tracks.input && !tracks.output) { onStatus('No audio captured.', 'error'); return; }
+        if (onStopped) onStopped(tracks);
+      }).catch(function () {
+        onStatus('Could not decode the recorded audio. Try Chrome/Edge.', 'error');
+      });
+    });
+  }
+  return {
+    init: function (cb) { onStatus = cb.status; onStopped = cb.onStopped; },
+    start: start,
+    stop: stop,
+    isRecording: function () { return recording; }
+  };
+})();
+
+/* ---------------------------------------------------------------------------
+   Transcription: try a blob worker; fall back to main thread. Never a file
+   URL worker (browsers block those from file://).
+--------------------------------------------------------------------------- */
+var TF_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.1/+esm';
+
+var ASRWorkerSrc = [
+  'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
+  'var CHUNK = 30 * 16000;',
+  'var piped = null, pipedKey = null;',
+  'self.onmessage = async function (e) {',
+  '  var data = e.data || {};',
+  '  if (data.type === "ping") { self.postMessage({ type: "ready" }); return; }',
+  '  var tracks = data.tracks || [];',
+  '  try {',
+  '    if (pipedKey !== (data.model + "|" + data.device)) {',
+  '      var mod = await import(TF_URL);',
+  '      var pipelineFn = mod.pipeline;',
+  '      self.postMessage({ type: "stage", stage: "loading" });',
+  '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
+  '        device: data.device,',
+  '        dtype: data.device === "webgpu"',
+  '          ? { encoder_model: "fp32", decoder_model_merged: "q4" }',
+  '          : { encoder_model: "fp32", decoder_model_merged: "q8" },',
+  '        progress_callback: function (x) {',
+  '          if (x && typeof x.progress === "number")',
+  '            self.postMessage({ type: "loading", progress: Math.round(x.progress), label: x.file || "model" });',
+  '          else if (x && x.status === "done")',
+  '            self.postMessage({ type: "loading", progress: 100, label: x.file || "model" });',
+  '        }',
+  '      });',
+  '      pipedKey = data.model + "|" + data.device;',
+  '    }',
+  '    self.postMessage({ type: "stage", stage: "transcribing" });',
+  '    for (var t = 0; t < tracks.length; t++) {',
+  '      var audio = tracks[t].audio;',
+  '      var lines = [];',
+  '      var total = Math.max(1, Math.ceil(audio.length / CHUNK));',
+  '      for (var off = 0, i = 0; off < audio.length; off += CHUNK, i++) {',
+  '        var end = Math.min(audio.length, off + CHUNK);',
+  '        var out = await piped(audio.subarray(off, end), { return_timestamps: true });',
+  '        var chunks = (out && out.chunks) || [];',
+  '        for (var c = 0; c < chunks.length; c++) {',
+  '          var text = String(chunks[c].text || "").trim();',
+  '          if (!text) continue;',
+  '          var s = 0, en = (end - off) / 16000;',
+  '          if (Array.isArray(chunks[c].timestamp) && chunks[c].timestamp.length >= 2) {',
+  '            s = Number(chunks[c].timestamp[0]) || 0;',
+  '            en = Number(chunks[c].timestamp[1]) || en;',
+  '          }',
+  '          lines.push({ start: off / 16000 + s, end: off / 16000 + en, text: text });',
+  '        }',
+  '        self.postMessage({ type: "progress", track: t, done: i + 1, total: total });',
+  '      }',
+  '      self.postMessage({ type: "track", label: tracks[t].label, lines: lines });',
+  '    }',
+  '    self.postMessage({ type: "complete" });',
+  '  } catch (err) {',
+  '    self.postMessage({ type: "error", message: String((err && err.message) || err) });',
+  '  }',
+  '};'
+].join('\n');
+
+var WorkerMode = null;  // 'worker' or 'main'
+
+function makeBlobWorker() {
+  var url = URL.createObjectURL(new Blob([ASRWorkerSrc], { type: 'text/javascript' }));
+  var w = new Worker(url);          // may throw
+  return { worker: w, url: url };
+}
+
+function workerReady(w, ms) {
+  return new Promise(function (resolve) {
+    var t = setTimeout(function () { cleanup(); resolve(false); }, ms);
+    function onmsg(e) { if (e.data && e.data.type === 'ready') cleanup(true); }
+    function onerr() { cleanup(false); }
+    function cleanup(ok) {
+      clearTimeout(t);
+      w.removeEventListener('message', onmsg);
+      w.removeEventListener('error', onerr);
+      resolve(!!ok);
+    }
+    w.addEventListener('message', onmsg);
+    w.addEventListener('error', onerr);
+  });
+}
+
+/** Prefer a blob worker (keeps the UI responsive); fall back to main thread. */
+function ensureWorkerMode() {
+  if (WorkerMode) return Promise.resolve(WorkerMode);
+  try {
+    var made = makeBlobWorker();
+    made.worker.postMessage({ type: 'ping' });
+    return workerReady(made.worker, 2500).then(function (ok) {
+      made.worker.terminate();
+      URL.revokeObjectURL(made.url);
+      WorkerMode = ok ? 'worker' : 'main';
+      return WorkerMode;
+    });
+  } catch (e) {
+    WorkerMode = 'main';
+    return Promise.resolve(WorkerMode);
+  }
+}
+
+var _tfPromise = null;
+function transformersModule() {
+  if (_tfPromise) return _tfPromise;
+  _tfPromise = import(TF_URL);   // dynamic import with CORS "*": works from file://
+  return _tfPromise;
+}
+
+/** Sequential per-chunk transcription of one track on the main thread. */
+function mainTrack(piped, track, tIdx, tTotal, emit) {
+  var audio = track.audio;
+  var CHUNK = 30 * 16000;
+  var total = Math.max(1, Math.ceil(audio.length / CHUNK));
+  var lines = [];
+  var seq = Promise.resolve();
+  for (var off = 0, i = 0; off < audio.length; off += CHUNK, i++) {
+    (function (off, i) {
+      seq = seq.then(function () {
+        var end = Math.min(audio.length, off + CHUNK);
+        return piped(audio.subarray(off, end), { return_timestamps: true }).then(function (out) {
+          var chunks = (out && out.chunks) || [];
+          for (var c = 0; c < chunks.length; c++) {
+            var text = String(chunks[c].text || '').trim();
+            if (!text) continue;
+            var s = 0, en = (end - off) / 16000;
+            if (Array.isArray(chunks[c].timestamp) && chunks[c].timestamp.length >= 2) {
+              s = Number(chunks[c].timestamp[0]) || 0;
+              en = Number(chunks[c].timestamp[1]) || en;
+            }
+            lines.push({ start: off / 16000 + s, end: off / 16000 + en, text: text });
+          }
+          emit([{ type: 'progress', track: tIdx, done: i + 1, total: total }]);
+        });
+      });
+    })(off, i);
+  }
+  return seq;
+}
+
+function transcribeMainThread(tasks, model, device, emit) {
+  return transformersModule().then(function (mod) {
+    var dtype = device === 'webgpu'
+      ? { encoder_model: 'fp32', decoder_model_merged: 'q4' }
+      : { encoder_model: 'fp32', decoder_model_merged: 'q8' };
+    var opts = {
+      device: device,
+      dtype: dtype,
+      progress_callback: function (x) {
+        if (x && typeof x.progress === 'number') emit([{ type: 'loading', progress: Math.round(x.progress), label: x.file || 'model' }]);
+        else if (x && x.status === 'done') emit([{ type: 'loading', progress: 100, label: x.file || 'model' }]);
+      }
+    };
+    return mod.pipeline('automatic-speech-recognition', model, opts);
+  }).then(function (piped) {
+    emit([{ type: 'stage', stage: 'transcribing' }]);
+    var results = [];
+    var seq = Promise.resolve();
+    tasks.forEach(function (track, tIdx) {
+      seq = seq.then(function () {
+        return mainTrack(piped, track, tIdx, tasks.length, emit);
+      }).then(function (lines) {
+        results.push({ label: track.label, lines: lines });
+      });
+    });
+    return seq.then(function () { emit([{ type: 'complete' }]); return results; });
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   App state + UI
+--------------------------------------------------------------------------- */
+var activeTab = 'recorder';
+var latestRecordingId = null;
+var elapsedTimer = null, elapsedStart = 0;
+var transcribing = false;
+var currentWorker = null;
+
+function setTab(name) {
+  activeTab = name;
+  var tabs = document.querySelectorAll('.tab');
+  for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i].dataset.tab === name);
+  var panes = document.querySelectorAll('.tab-pane');
+  for (var j = 0; j < panes.length; j++) panes[j].classList.toggle('active', panes[j].id === 'pane-' + name);
+  if (name === 'history') renderHistory();
+}
+$('tabs').addEventListener('click', function (e) {
+  var t = e.target && e.target.closest ? e.target.closest('.tab') : null;
+  if (t) setTab(t.dataset.tab);
+});
+
+function setStatus(m, cls) { $('status').className = cls || ''; $('status').textContent = m; }
+function recSetStatus(m, cls) { $('recStatus').className = cls || ''; $('recStatus').textContent = m; }
+
+function startElapsed() {
+  elapsedStart = Date.now();
+  $('elapsed').textContent = '0s';
+  clearInterval(elapsedTimer);
+  elapsedTimer = setInterval(function () {
+    $('elapsed').textContent = fmtElapsed((Date.now() - elapsedStart) / 1000);
+  }, 250);
+}
+function stopElapsed() { clearInterval(elapsedTimer); elapsedTimer = null; }
+function setBar(p, label) {
+  p = Math.max(0, Math.min(100, p));
+  $('fill').style.width = p + '%';
+  $('pct').textContent = Math.round(p) + '%';
+  if (label) $('stage').textContent = label;
+}
+
+/* ---------- Recorder wiring ---------- */
+Recorder.init({
+  status: recSetStatus,
+  onStopped: function (tracks) {
+    var idx = 0;
+    ['input', 'output'].forEach(function (key) {
+      if (!tracks[key]) return;
+      var f = tracks[key];
+      var d = document.createElement('div');
+      d.className = 'file-item';
+      var n = document.createElement('span');
+      n.className = 'fname';
+      n.textContent = (key === 'input' ? 'Agent (mic): ' : 'Caller (system): ') + f.name;
+      var sz = document.createElement('span');
+      sz.className = 'fsize';
+      sz.textContent = (f.blob.size / 1048576).toFixed(2) + ' MB';
+      var c = document.createElement('span');
+      c.className = 'fcontrols';
+      var audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = URL.createObjectURL(f.blob);
+      var save = document.createElement('button');
+      save.className = 'mini';
+      save.textContent = 'Save';
+      save.onclick = (function (b, nm) { return function () { downloadBlob(b, nm); }; })(f.blob, f.name);
+      c.appendChild(audio); c.appendChild(save);
+      d.appendChild(n); d.appendChild(sz); d.appendChild(c);
+      $('recFiles').appendChild(d);
+      idx++;
+    });
+    $('recAfter').style.display = 'block';
+
+    var duration = tracks.input ? wavDurationSeconds(tracks.input.blob) :
+                   (tracks.output ? wavDurationSeconds(tracks.output.blob) : 0);
+    var rec = {
+      id: uid(),
+      ts: Date.now(),
+      duration: duration,
+      tracks: {
+        input: tracks.input ? { blob: tracks.input.blob, name: tracks.input.name } : null,
+        output: tracks.output ? { blob: tracks.output.blob, name: tracks.output.name } : null
+      }
+    };
+    Store.saveRecording(rec).then(function () {
+      latestRecordingId = rec.id;
+      $('transcribeBtn').disabled = false;
+      $('recSavedNote').style.display = 'block';
+      recSetStatus('Recording saved locally. Listen, download, or transcribe below.' + (Store.isPersistent() ? '' : ' (storage unavailable: keeping it in memory for this session)'), 'ok');
+      renderHistory();
+    });
+  }
+});
+$('recStart').addEventListener('click', function () { Recorder.start(); });
+$('recStop').addEventListener('click', function () { Recorder.stop(); });
+
+/* ---------- Transcription flow ---------- */
+function detectDevice() {
+  if (!navigator.gpu) return Promise.resolve('wasm');
+  return navigator.gpu.requestAdapter().then(function (a) { return a ? 'webgpu' : 'wasm'; }).catch(function () { return 'wasm'; });
+}
+
+function formatLines(trackResults) {
+  var merged = [];
+  var order = 0;
+  trackResults.forEach(function (t) {
+    (t.lines || []).forEach(function (l) {
+      if (!l.text) return;
+      merged.push({ start: l.start, end: l.end, text: l.text, label: t.label, order: order++ });
+    });
+  });
+  merged.sort(function (a, b) { return (a.start - b.start) || (a.order - b.order); });
+  return merged.map(function (l) {
+    var label = l.label ? ' [' + l.label + ']' : '';
+    return '[' + fmtTimestamp(l.start) + ' - ' + fmtTimestamp(l.end) + ']' + label + ' "' + l.text + '"';
+  }).join('\n');
+}
+
+function runTranscription(rec) {
+  if (!rec || transcribing) return;
+  transcribing = true;
+  $('transcribeBtn').disabled = true;
+  $('transcribeCancel').disabled = false;
+  $('transcriptWrap').style.display = 'none';
+  $('transcriptOut').value = '';
+  setStatus('');
+  $('progressWrap').style.display = 'block';
+  startElapsed();
+
+  var device = 'wasm';
+  var model = $('model').value;
+  var tasks = [];
+  if (rec.tracks && rec.tracks.input) tasks.push({ label: 'Agent', audio: null, blob: rec.tracks.input.blob });
+  if (rec.tracks && rec.tracks.output) tasks.push({ label: 'Caller', audio: null, blob: rec.tracks.output.blob });
+  if (!tasks.length) { finishError('This recording has no audio.'); return; }
+
+  var overall = 0;
+  var emit = function (events) {
+    events.forEach(function (ev) {
+      if (ev.type === 'loading') {
+        setBar(ev.progress, 'Downloading / loading model (' + model.split('/').pop() + ')...');
+      } else if (ev.type === 'stage') {
+        if (ev.stage === 'loading') setBar(0, 'Downloading / loading model (' + model.split('/').pop() + ')...');
+        else setBar(overall === 0 ? 0 : overall, 'Transcribing...');
+      } else if (ev.type === 'progress') {
+        var tIdx = ev.track, tTotal = tasks.length;
+        var chunkPct = (ev.done / Math.max(1, ev.total)) * 100;
+        overall = Math.round(((tIdx + chunkPct / 100) / tTotal) * 100);
+        setBar(overall, 'Transcribing ' + tasks[tIdx].label + ' — chunk ' + ev.done + '/' + ev.total);
+      }
+    });
+  };
+
+  Promise.resolve(detectDevice()).then(function (d) {
+    device = d;
+    var decodeSeq = Promise.resolve();
+    tasks.forEach(function (t) { decodeSeq = decodeSeq.then(function () { return wavToF32(t.blob); }).then(function (f32) { t.audio = f32; }); });
+    return decodeSeq;
+  }).then(function () {
+    return ensureWorkerMode();
+  }).then(function (mode) {
+    if (mode === 'worker') return runInWorker(tasks, model, device, emit);
+    return transcribeMainThread(tasks, model, device, emit);
+  }).then(function (results) {
+    var text = formatLines(results);
+    if (!text.trim()) { finishError('No speech detected in the audio.'); return; }
+    setBar(100, 'Complete');
+    stopElapsed();
+    $('transcriptOut').value = text;
+    $('transcriptWrap').style.display = 'block';
+    Store.saveTranscript(rec.id, text, model, device);
+    renderHistory();
+    setStatus('Transcription complete (' + device + ', ' + model.split('/').pop() + '). Nothing was uploaded.', 'ok');
+  }).catch(function (err) {
+    stopElapsed();
+    setBar(0, 'Error');
+    setStatus('Transcription failed: ' + ((err && err.message) || err), 'error');
+  }).then(function () {
+    transcribing = false;
+    $('progressWrap').style.display = 'none';
+    $('transcribeBtn').disabled = false;
+    $('transcribeCancel').disabled = true;
+    if (currentWorker) { currentWorker.terminate(); currentWorker = null; }
+  });
+}
+
+function runInWorker(tasks, model, device, emit) {
+  return new Promise(function (resolve, reject) {
+    var made;
+    try { made = makeBlobWorker(); } catch (e) {
+      return transcribeMainThread(tasks, model, device, emit).then(resolve, reject);
+    }
+    currentWorker = made.worker;
+    var done = false;
+    var results = [];
+    made.worker.onmessage = function (e) {
+      var d = e.data || {};
+      if (d.type === 'complete') { cleanup(); resolve(results); }
+      else if (d.type === 'track') { results.push({ label: d.label, lines: d.lines }); }
+      else if (d.type === 'error') { cleanup(); transcribeMainThread(tasks, model, device, emit).then(resolve, reject); }
+      else emit([d]);
+    };
+    made.worker.onerror = function (e) {
+      // Blob worker or in-worker import() failed: degrade to main thread.
+      cleanup();
+      transcribeMainThread(tasks, model, device, emit).then(resolve, reject);
+    };
+    function cleanup() {
+      if (done) return;
+      done = true;
+      try { made.worker.terminate(); } catch (e) {}
+      URL.revokeObjectURL(made.url);
+      currentWorker = null;
+    }
+    var payload = { model: model, device: device, tracks: tasks.map(function (t) { return { label: t.label, audio: t.audio }; }) };
+    made.worker.postMessage(payload, tasks.map(function (t) { return t.audio.buffer; }));
+  });
+}
+
+function finishError(msg) {
+  stopElapsed();
+  setBar(0, 'Error');
+  setStatus(msg, 'error');
+}
+
+function cancelTranscription() {
+  if (!transcribing) return;
+  if (currentWorker) {
+    try { currentWorker.terminate(); } catch (e) {}
+    currentWorker = null;
+  }
+  stopElapsed();
+  setBar(0, 'Cancelled');
+  setStatus('Transcription cancelled. You can try again.', '');
+  transcribing = false;
+  $('progressWrap').style.display = 'none';
+  $('transcribeBtn').disabled = false;
+  $('transcribeCancel').disabled = true;
+}
+
+$('transcribeBtn').addEventListener('click', function () {
+  Store.listRecordings().then(function (recs) {
+    if (!recs.length) { setStatus('Record something first.', 'error'); return; }
+    var rec = recs[0];
+    if (latestRecordingId) {
+      for (var i = 0; i < recs.length; i++) if (recs[i].id === latestRecordingId) { rec = recs[i]; break; }
+    }
+    runTranscription(rec);
+  });
+});
+$('transcribeCancel').addEventListener('click', cancelTranscription);
+
+/* ---------- Transcript output ---------- */
+$('copyTranscript').addEventListener('click', function () {
+  var t = $('transcriptOut');
+  t.focus(); t.select();
+  try { document.execCommand('copy'); setStatus('Transcript copied to clipboard.', 'ok'); } catch (e) {}
+  t.setSelectionRange(0, 0);
+});
+$('downloadTranscript').addEventListener('click', function () {
+  var text = $('transcriptOut').value;
+  if (text) downloadBlob(new Blob([text], { type: 'text/plain' }), 'transcript-' + tsNowStamp() + '.txt');
+});
+
+/* ---------- History ---------- */
+function fmtDur(sec) {
+  if (!sec) return '';
+  var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = Math.floor(sec % 60);
+  var out = s + 's';
+  if (m) out = m + 'm ' + out;
+  if (h) out = h + 'h ' + out;
+  return out + ' audio';
+}
+function mkHistBtn(label, cls, fn) {
+  var b = document.createElement('button');
+  b.className = 'mini' + (cls ? ' ' + cls : '');
+  b.textContent = label;
+  b.addEventListener('click', fn);
+  return b;
+}
+
+function renderHistory() {
+  $('historyList').innerHTML = '<div class="hint">Loading...</div>';
+  Store.listRecordings().then(function (recs) {
+    if (!recs.length) {
+      $('historyList').innerHTML = '<div class="hint">No recordings yet. Go to the Recorder tab and hit Start Recording.</div>';
+      return;
+    }
+    $('historyList').innerHTML = '';
+    var chain = Promise.resolve();
+    recs.forEach(function (rec) {
+      chain = chain.then(function () { return Store.getTranscript(rec.id).then(function (tr) { renderHistItem(rec, tr); }); });
+    });
+  });
+}
+
+function renderHistItem(rec, transcript) {
+  var item = document.createElement('div');
+  item.className = 'hist-item';
+
+  var top = document.createElement('div');
+  top.className = 'hist-top';
+  var name = document.createElement('div');
+  name.className = 'hist-name';
+  name.textContent = new Date(rec.ts).toLocaleString();
+  top.appendChild(name);
+  item.appendChild(top);
+
+  var parts = [];
+  if (rec.duration) parts.push(fmtDur(rec.duration));
+  if (rec.tracks && rec.tracks.input) parts.push('Agent ' + (rec.tracks.input.blob.size / 1048576).toFixed(2) + ' MB');
+  if (rec.tracks && rec.tracks.output) parts.push('Caller ' + (rec.tracks.output.blob.size / 1048576).toFixed(2) + ' MB');
+  var meta = document.createElement('div');
+  meta.className = 'hist-meta';
+  meta.textContent = parts.join(' · ');
+  item.appendChild(meta);
+
+  var actions = document.createElement('div');
+  actions.className = 'hist-actions';
+  if (rec.tracks && rec.tracks.input) {
+    actions.appendChild(mkHistBtn('Save Agent (.wav)', '', function () { downloadBlob(rec.tracks.input.blob, rec.tracks.input.name); }));
+  }
+  if (rec.tracks && rec.tracks.output) {
+    actions.appendChild(mkHistBtn('Save Caller (.wav)', '', function () { downloadBlob(rec.tracks.output.blob, rec.tracks.output.name); }));
+  }
+  actions.appendChild(mkHistBtn('Transcribe', 'green', function () {
+    latestRecordingId = rec.id;
+    setTab('recorder');
+    runTranscription(rec);
+  }));
+  actions.appendChild(mkHistBtn('Delete', 'red', function () {
+    if (!confirm('Delete this recording (audio + transcript) from this browser?')) return;
+    Store.deleteRecording(rec.id).then(function () {
+      if (latestRecordingId === rec.id) { latestRecordingId = null; $('transcribeBtn').disabled = true; }
+      renderHistory();
+    });
+  }));
+  item.appendChild(actions);
+
+  if (transcript && transcript.text) {
+    var tb = document.createElement('div');
+    tb.className = 'hist-transcript';
+    tb.textContent = transcript.text;
+    item.appendChild(tb);
+  }
+  $('historyList').appendChild(item);
+}
+
+$('historyRefresh').addEventListener('click', renderHistory);
+$('historyClear').addEventListener('click', function () {
+  if (!confirm('Delete ALL recordings and transcripts stored in this browser?')) return;
+  Store.clearAll().then(function () {
+    latestRecordingId = null;
+    $('transcribeBtn').disabled = true;
+    $('transcriptWrap').style.display = 'none';
+    renderHistory();
+    setStatus('All local data cleared.', 'ok');
+  });
+});
+
+/* ---------- Init ---------- */
+// COI service worker only helps when hosted over http(s); never on file://.
+if (location.protocol.indexOf('http') === 0) {
+  var coi = document.createElement('script');
+  coi.src = 'coi-serviceworker.js';
+  document.head.appendChild(coi);
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(function () {});
+  }
+}
+Store.listRecordings().then(function (recs) {
+  if (recs.length) {
+    latestRecordingId = recs[0].id;
+    $('transcribeBtn').disabled = false;
+  }
+  renderHistory();
+});
+</script>
+</body>
+</html>

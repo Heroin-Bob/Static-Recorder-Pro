@@ -251,6 +251,10 @@
   <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="e.g. Write a reply email based on this conversation">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as &quot;Me&quot;.</textarea>
   <div class="hint">Tips: "summarize the call in 5 bullets", "list the action items and who owns them", "draft a follow-up text message", "explain this to a new colleague".</div>
 
+  <label class="extra-label" for="llmRef">Reference / example notes (optional)</label>
+  <textarea id="llmRef" rows="3" spellcheck="false" placeholder="Paste an old note or template here ONLY to show the desired format. The AI is instructed to ignore its content, names, and details."></textarea>
+  <div class="hint">Use this to teach the output format (section headings, style). The AI is told explicitly that this box's <b>content is not part of the call</b> and must never be repeated.</div>
+
   <div class="rec-btns" style="margin-top:14px">
     <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
     <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
@@ -1166,8 +1170,15 @@ var LLMWorkerSrc = [
   '};'
 ].join('\n');
 
-var LLM_SYSTEM = 'You are a helpful assistant working with a transcript of a call. ' +
-  'Answer using only the transcript. Do not invent facts. Write plain text without markdown.';
+var LLM_SYSTEM = 'You are a helpful assistant writing output from a call transcript. ' +
+  'RULE 1: ONLY the text in the section "===== TRANSCRIPT - THE ACTUAL CALL =====" is real ' +
+  'content of this call. Every fact, name, company, and detail in your answer must come from ' +
+  'that section and nowhere else.\n' +
+  'RULE 2: Text in any section called "EXAMPLE / REFERENCE" or "INSTRUCTIONS" is NOT part of the ' +
+  'call. An EXAMPLE is shown only to imitate its formatting/style — never copy its content, ' +
+  'names, companies, or details into your answer.\n' +
+  'RULE 3: Do not invent anything missing from the transcript. Write plain text; keep section ' +
+  'headings bold only if the instructions ask for them.';
 
 var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
 var llmBusy = false, llmMode = null, llmAbort = false;
@@ -1269,11 +1280,19 @@ function runLLM() {
     return;
   }
   var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
+  var ref = $('llmRef').value.trim();
+  var userText = 'INSTRUCTIONS:\n' + prompt + '\n';
+  if (ref) {
+    userText += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' +
+      ref + '\n';
+  }
+  userText += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\n' +
+    transcript;
   var job = {
     id: ++llmJobSeq,
     model: $('llmModel').value,
     system: LLM_SYSTEM,
-    user: 'INSTRUCTIONS:\n' + prompt + '\n\nTRANSCRIPT:\n' + transcript,
+    user: userText,
     maxTokens: 512,
   };
   // If the chosen model hits an out-of-memory error, retry with progressively

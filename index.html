@@ -1287,10 +1287,58 @@ function findSpeechBounds(audio, from, to, rate) {
   return { start: start, end: end };
 }
 
+/* Durable model cache backed by IndexedDB. Unlike the browser Cache API,
+   IndexedDB survives page reloads and isn't evicted as aggressively for large
+   model files, so refreshes don't force a re-download. Injected into workers
+   via `.toString()` and wired up as Transformers.js `env.customCache`. */
+function makeIDBCache(dbName, storeName) {
+  if (typeof indexedDB === 'undefined') return null;
+  dbName = dbName || 'transformers-idb';
+  storeName = storeName || 'files';
+  var dbPromise = new Promise(function (resolve, reject) {
+    var req = indexedDB.open(dbName, 1);
+    req.onupgradeneeded = function () {
+      var d = req.result;
+      if (!d.objectStoreNames.contains(storeName)) d.createObjectStore(storeName, { keyPath: 'url' });
+    };
+    req.onsuccess = function () { resolve(req.result); };
+    req.onerror = function () { reject(req.error); };
+  });
+  function keyOf(rq) { return typeof rq === 'string' ? rq : (rq && rq.url); }
+  return {
+    match: function (rq) {
+      var url = keyOf(rq);
+      if (!url) return Promise.resolve(undefined);
+      return dbPromise.then(function (db) {
+        return new Promise(function (resolve) {
+          var g = db.transaction(storeName, 'readonly').objectStore(storeName).get(url);
+          g.onsuccess = function () { resolve(g.result ? new Response(g.result.data, { status: 200 }) : undefined); };
+          g.onerror = function () { resolve(undefined); };
+        });
+      }).catch(function () { return undefined; });
+    },
+    put: function (rq, response) {
+      var url = keyOf(rq);
+      if (!url) return Promise.resolve();
+      return response.clone().arrayBuffer().then(function (buf) {
+        return dbPromise.then(function (db) {
+          return new Promise(function (resolve, reject) {
+            var tx = db.transaction(storeName, 'readwrite');
+            tx.objectStore(storeName).put({ url: url, data: buf });
+            tx.oncomplete = resolve;
+            tx.onerror = function () { reject(tx.error); };
+          });
+        });
+      }).catch(function () {});
+    }
+  };
+}
+
 var ASRWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
   'var CHUNK = 30 * 16000;',
   findSpeechBounds.toString(),
+  makeIDBCache.toString(),
   'var piped = null, pipedKey = null;',
   'self.onmessage = async function (e) {',
   '  var data = e.data || {};',
@@ -1299,6 +1347,8 @@ var ASRWorkerSrc = [
   '  try {',
   '    if (pipedKey !== (data.model + "|" + data.device)) {',
   '      var mod = await import(TF_URL);',
+  '      var idbCache = makeIDBCache("tf-asr-cache");',
+  '      if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }',
   '      var pipelineFn = mod.pipeline;',
   '      self.postMessage({ type: "stage", stage: "loading" });',
   '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
@@ -1400,7 +1450,13 @@ function ensureWorkerMode() {
 var _tfPromise = null;
 function transformersModule() {
   if (_tfPromise) return _tfPromise;
-  _tfPromise = import(TF_URL);
+  _tfPromise = import(TF_URL).then(function (mod) {
+    try {
+      var idbCache = makeIDBCache('tf-main-cache');
+      if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }
+    } catch (e) {}
+    return mod;
+  });
   return _tfPromise;
 }
 
@@ -1825,6 +1881,7 @@ $('downloadTranscript').addEventListener('click', function () {
 --------------------------------------------------------------------------- */
 var LLMWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
+  makeIDBCache.toString(),
   'var piped = null, pipedKey = null;',
   'self.onmessage = async function (e) {',
   '  var d = e.data || {};',
@@ -1832,6 +1889,8 @@ var LLMWorkerSrc = [
   '  if (d.type !== "generate") return;',
   '  try {',
   '    var mod = await import(TF_URL);',
+  '    var idbCache = makeIDBCache("tf-llm-cache");',
+  '    if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }',
   '    var key = d.model + "|" + d.device;',
   '    if (!piped || pipedKey !== key) {',
   '      self.postMessage({ type: "loading" });',

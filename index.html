@@ -2715,6 +2715,9 @@ function renderHistItem(rec, transcript) {
     actions.appendChild(mkHistBtn('Use Transcript', '', function () {
       loadTranscriptIntoAI(transcript.text, false);
     }));
+    actions.appendChild(mkHistBtn('Save Transcript (.txt)', '', function () {
+      downloadBlob(new Blob([transcript.text], { type: 'text/plain' }), 'transcript-' + rec.id + '.txt');
+    }));
     actions.appendChild(mkHistBtn('AI Draft', 'green', function () {
       loadTranscriptIntoAI(transcript.text, true);
     }));

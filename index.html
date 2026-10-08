@@ -1419,6 +1419,10 @@ var ASRWorkerSrc = [
   '  try {',
   '    if (pipedKey !== (data.model + "|" + data.device)) {',
   '      var mod = await import(TF_URL);',
+  '      try {',
+  '        var threadsOk = typeof SharedArrayBuffer !== "undefined" && (self.crossOriginIsolated === true);',
+  '        mod.env.backends.onnx.wasm.numThreads = threadsOk ? 4 : 1;',
+  '      } catch (e) {}',
   '      var pipelineFn = mod.pipeline;',
   '      self.postMessage({ type: "stage", stage: "loading" });',
   '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
@@ -1949,9 +1953,17 @@ var LLMWorkerSrc = [
   'self.onmessage = async function (e) {',
   '  var d = e.data || {};',
   '  if (d.type === "ping") { self.postMessage({ type: "ready" }); return; }',
-  '  if (d.type !== "generate" && d.type !== "batched_generate") return;',
+  '  if (d.type !== "generate" && d.type !== "batched_generate" && d.type !== "smoke") return;',
   '  try {',
   '    var mod = await import(TF_URL);',
+  '    try {',
+  '      // Multi-threaded WASM needs SharedArrayBuffer (cross-origin isolation),',
+  '      // which GitHub Pages cannot provide. Threads silently misbehave without',
+  '      // it ("table index is out of bounds" traps) — force the stable single-',
+  '      // thread WASM core; GPU ops still run on the WebGPU backend.',
+  '      var threadsOk = typeof SharedArrayBuffer !== "undefined" && (self.crossOriginIsolated === true);',
+  '      mod.env.backends.onnx.wasm.numThreads = threadsOk ? 4 : 1;',
+  '    } catch (e) {}',
   '    var key = d.model + "|" + d.device;',
   '    if (!piped || pipedKey !== key) {',
   '      self.postMessage({ type: "loading" });',
@@ -1967,6 +1979,19 @@ var LLMWorkerSrc = [
   '        }',
   '      });',
   '      pipedKey = key;',
+  '    }',
+  '    if (d.type === "smoke") {',
+  '      var smokeOk = false;',
+  '      try {',
+  '        var smoke = await piped(',
+  '          [ { role: "system", content: "Reply with exactly one word." }, { role: "user", content: "Test" } ],',
+  '          { max_new_tokens: 8, do_sample: false }',
+  '        );',
+  '        var smokeText = (smoke && smoke.generated_text) ? String(smoke.generated_text).trim() : "";',
+  '        smokeOk = smokeText.length > 0;',
+  '      } catch (errSmoke) { smokeOk = false; }',
+  '      self.postMessage({ type: "smoke", ok: smokeOk });',
+  '      return;',
   '    }',
   '    self.postMessage({ type: "generating" });',
   '    if (d.type === "batched_generate") {',
@@ -2262,6 +2287,7 @@ function runLLM() {
 }
 
 var _llmWasmFallback = false;   // set once GPU LLM execution fails; use CPU for the rest of the session
+var _llmSmokeDone = false;      // one WebGPU self-test per session
 
 function startLLMJob(job) {
   detectDevice().then(function (detected) {
@@ -2290,6 +2316,14 @@ function startLLMJob(job) {
       }
     }
     llmMode = 'worker';
+    if (device === 'webgpu' && !_llmSmokeDone) {
+      // One-time self-test: if this browser can't run the LLM on WebGPU,
+      // switch to CPU for the rest of the session instead of crashing.
+      _llmSmokeDone = true;
+      llmSetStatus('Verifying WebGPU can run this AI model...', '');
+      llmWorker.postMessage({ type: 'smoke', model: job.model, device: device, f16: _deviceF16 });
+      return;
+    }
     if (batched) {
       llmWorker.postMessage({
         type: 'batched_generate', model: job.model, device: device, f16: _deviceF16,
@@ -2354,6 +2388,15 @@ function onLLMMessage(e) {
     llmSetBar(100, 'Summarizing parts of the transcript... ' + d.done + '/' + d.total);
     llmSetStatus('Reading the full transcript in ' + d.total + ' parts, ' +
       d.done + '/' + d.total + ' summarized so far.', '');
+  } else if (d.type === 'smoke') {
+    if (d.ok && llmCurrentJob) {
+      llmSetStatus('WebGPU verified. Generating...', '');
+      startLLMJob(llmCurrentJob);
+    } else {
+      _llmWasmFallback = true;
+      llmSetStatus('This browser\'s WebGPU can\'t run this AI model reliably, so it will use CPU (WASM) mode. Slower, but fully functional.', '');
+      if (llmCurrentJob) startLLMJob(llmCurrentJob);
+    }
   } else if (d.type === 'token') {
     appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
   } else if (d.type === 'complete') {

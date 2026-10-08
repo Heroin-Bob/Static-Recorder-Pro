@@ -166,12 +166,12 @@ Notes:
 
 When you press **Generate with AI**, the transcript is compacted in the background (the visible box stays unchanged):
 
-`[00:00:01.290 - 00:00:07.930] [Caller] "We've all heard the saying, don't mess with Texas, but there's no movie that makes"`  
-`[00:00:07.930 - 00:00:11.210] [Caller] "it more explicit than the Texas Chainsaw Massacre."`
+`[00:00:01.290 - 00:00:07.930] [Caller] "Well the issue with our system"`  
+`[00:00:07.930 - 00:00:11.210] [Caller] "we think is related to memory."`
 
 becomes:
 
-`[Caller] "We've all heard the saying, don't mess with Texas, but there's no movie that makes it more explicit than the Texas Chainsaw Massacre."`
+`[Caller] "Well the issue with our system we think is related to memory"`
 
 Timestamps are removed and consecutive same-speaker lines are merged — typically **~45% fewer characters**, so the AI reads more of the call within its context budget.
 
@@ -193,17 +193,6 @@ Timestamps are removed and consecutive same-speaker lines are merged — typical
 - **Cloud mode:** your transcript, prompt, reference, and key are sent **directly** from your browser to the provider you configure — with no intermediaries in between, but the provider's terms apply.
 - **No telemetry, no analytics, no cookies.**
 - Recordings, transcripts, and settings live in your browser's local storage. **Clearing site data erases them permanently.**
-
----
-
-## Project structure
-
-| File | Purpose |
-| --- | --- |
-| `index.html` | The entire application (HTML, CSS, JS) |
-| `sw.js` | Service worker: offline shell caching for hosted use |
-| `manifest.webmanifest`, `icon.svg` | PWA metadata / icon |
-| `coi-serviceworker.js` | Legacy file (no longer loaded; kept for reference) |
 
 ---
 

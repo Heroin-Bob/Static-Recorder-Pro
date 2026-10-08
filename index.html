@@ -478,6 +478,106 @@
     border-color: var(--accent-cyan);
     transform: translateY(-1px);
   }
+  .preset-add {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border-radius: 50%;
+    background: rgba(56, 189, 248, 0.08);
+    border: 1px dashed rgba(56, 189, 248, 0.5);
+    color: var(--accent-cyan);
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .preset-add:hover {
+    background: rgba(56, 189, 248, 0.2);
+    border-color: var(--accent-cyan);
+  }
+  .preset-chip.custom {
+    border-color: rgba(163, 230, 53, 0.4);
+    background: rgba(163, 230, 53, 0.08);
+    color: var(--text-main);
+  }
+  .preset-chip.custom:hover {
+    background: rgba(163, 230, 53, 0.18);
+    border-color: #a3e635;
+  }
+
+  /* Modal */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .modal {
+    background: #15191f;
+    border: 1px solid var(--border-color);
+    border-radius: 14px;
+    padding: 20px;
+    width: min(460px, 92vw);
+    max-height: 90vh;
+    overflow: auto;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  }
+  .modal h3 { margin: 0 0 14px; font-size: 1.05rem; }
+  .modal label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 12px 0 4px;
+  }
+  .modal input,
+  .modal textarea {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font: inherit;
+    resize: vertical;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 18px;
+  }
+
+  /* Right-click context menu */
+  .ctx-menu {
+    position: fixed;
+    z-index: 120;
+    background: #1a1e25;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    min-width: 150px;
+  }
+  .ctx-menu button {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: #f87171;
+    text-align: left;
+    padding: 9px 16px;
+    font-weight: 600;
+    font-size: 0.84rem;
+  }
+  .ctx-menu button:hover { background: rgba(248, 113, 113, 0.12); }
 
   /* Status Logs */
   #status, #recStatus, #llmStatus {
@@ -758,18 +858,38 @@
             <label for="llmPrompt">AI Prompt Instruction</label>
             
             <!-- Quick Preset Chips -->
-            <div class="presets-row">
+            <div class="presets-row" id="presetsRow">
+              <button type="button" class="preset-add" id="presetAdd" title="Add a custom AI prompt">+</button>
               <div class="preset-chip" data-prompt="Summarize this call in 5 key bullet points with executive context.">📝 Bullet Summary</div>
               <div class="preset-chip" data-prompt="Extract all action items, owners, and promised next steps from this transcript.">✅ Action Items</div>
               <div class="preset-chip" data-prompt="Write a professional follow-up reply email summarizing key discussions and clear next steps. Sign off as 'Me'.">✉️ Follow-up Email</div>
               <div class="preset-chip" data-prompt="List the main decisions made, unanswered questions, and key concerns raised during the call.">💡 Key Decisions</div>
             </div>
 
+            <div class="modal-overlay" id="presetModal" style="display:none">
+              <div class="modal">
+                <h3 id="presetModalTitle">Add AI Prompt</h3>
+                <label id="presetNameLabel" for="presetName">Button Name</label>
+                <input id="presetName" type="text" placeholder="e.g. Meeting Notes" maxlength="40">
+                <label id="presetPromptLabel" for="presetPrompt">Prompt Instruction</label>
+                <textarea id="presetPrompt" rows="4" spellcheck="false" placeholder="What should the AI do with the transcript?"></textarea>
+                <div class="modal-actions">
+                  <button type="button" id="presetCancel" class="btn">Cancel</button>
+                  <button type="button" id="presetSave" class="btn-green">Save</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="ctx-menu" id="presetCtxMenu" style="display:none"></div>
+
             <textarea id="llmPrompt" rows="3" spellcheck="false" placeholder="What should the AI do with this transcript?">Write a professional reply email based on this conversation. Use only information from the transcript, match its tone, cover the key points, and end with a clear next step. Sign it as "Me".</textarea>
           </div>
 
           <div class="form-group">
             <label for="llmRef">Format Reference / Template (Optional)</label>
+            <div class="presets-row" id="refsRow">
+              <button type="button" class="preset-add" id="refAdd" title="Add a custom format reference">+</button>
+            </div>
             <textarea id="llmRef" rows="2" spellcheck="false" placeholder="Paste a sample layout or structure template here. The AI will match its format while strictly using data from the transcript."></textarea>
           </div>
 
@@ -1287,58 +1407,10 @@ function findSpeechBounds(audio, from, to, rate) {
   return { start: start, end: end };
 }
 
-/* Durable model cache backed by IndexedDB. Unlike the browser Cache API,
-   IndexedDB survives page reloads and isn't evicted as aggressively for large
-   model files, so refreshes don't force a re-download. Injected into workers
-   via `.toString()` and wired up as Transformers.js `env.customCache`. */
-function makeIDBCache(dbName, storeName) {
-  if (typeof indexedDB === 'undefined') return null;
-  dbName = dbName || 'transformers-idb';
-  storeName = storeName || 'files';
-  var dbPromise = new Promise(function (resolve, reject) {
-    var req = indexedDB.open(dbName, 1);
-    req.onupgradeneeded = function () {
-      var d = req.result;
-      if (!d.objectStoreNames.contains(storeName)) d.createObjectStore(storeName, { keyPath: 'url' });
-    };
-    req.onsuccess = function () { resolve(req.result); };
-    req.onerror = function () { reject(req.error); };
-  });
-  function keyOf(rq) { return typeof rq === 'string' ? rq : (rq && rq.url); }
-  return {
-    match: function (rq) {
-      var url = keyOf(rq);
-      if (!url) return Promise.resolve(undefined);
-      return dbPromise.then(function (db) {
-        return new Promise(function (resolve) {
-          var g = db.transaction(storeName, 'readonly').objectStore(storeName).get(url);
-          g.onsuccess = function () { resolve(g.result ? new Response(g.result.data, { status: 200 }) : undefined); };
-          g.onerror = function () { resolve(undefined); };
-        });
-      }).catch(function () { return undefined; });
-    },
-    put: function (rq, response) {
-      var url = keyOf(rq);
-      if (!url) return Promise.resolve();
-      return response.clone().arrayBuffer().then(function (buf) {
-        return dbPromise.then(function (db) {
-          return new Promise(function (resolve, reject) {
-            var tx = db.transaction(storeName, 'readwrite');
-            tx.objectStore(storeName).put({ url: url, data: buf });
-            tx.oncomplete = resolve;
-            tx.onerror = function () { reject(tx.error); };
-          });
-        });
-      }).catch(function () {});
-    }
-  };
-}
-
 var ASRWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
   'var CHUNK = 30 * 16000;',
   findSpeechBounds.toString(),
-  makeIDBCache.toString(),
   'var piped = null, pipedKey = null;',
   'self.onmessage = async function (e) {',
   '  var data = e.data || {};',
@@ -1347,8 +1419,6 @@ var ASRWorkerSrc = [
   '  try {',
   '    if (pipedKey !== (data.model + "|" + data.device)) {',
   '      var mod = await import(TF_URL);',
-  '      var idbCache = makeIDBCache("tf-asr-cache");',
-  '      if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }',
   '      var pipelineFn = mod.pipeline;',
   '      self.postMessage({ type: "stage", stage: "loading" });',
   '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
@@ -1450,13 +1520,7 @@ function ensureWorkerMode() {
 var _tfPromise = null;
 function transformersModule() {
   if (_tfPromise) return _tfPromise;
-  _tfPromise = import(TF_URL).then(function (mod) {
-    try {
-      var idbCache = makeIDBCache('tf-main-cache');
-      if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }
-    } catch (e) {}
-    return mod;
-  });
+  _tfPromise = import(TF_URL);
   return _tfPromise;
 }
 
@@ -1881,7 +1945,6 @@ $('downloadTranscript').addEventListener('click', function () {
 --------------------------------------------------------------------------- */
 var LLMWorkerSrc = [
   'var TF_URL = ' + JSON.stringify(TF_URL) + ';',
-  makeIDBCache.toString(),
   'var piped = null, pipedKey = null;',
   'self.onmessage = async function (e) {',
   '  var d = e.data || {};',
@@ -1889,8 +1952,6 @@ var LLMWorkerSrc = [
   '  if (d.type !== "generate") return;',
   '  try {',
   '    var mod = await import(TF_URL);',
-  '    var idbCache = makeIDBCache("tf-llm-cache");',
-  '    if (idbCache) { mod.env.useBrowserCache = false; mod.env.useCustomCache = true; mod.env.customCache = idbCache; }',
   '    var key = d.model + "|" + d.device;',
   '    if (!piped || pipedKey !== key) {',
   '      self.postMessage({ type: "loading" });',
@@ -2235,13 +2296,137 @@ $('llmModel').addEventListener('change', function () { llmUserPickedModel = true
 document.addEventListener('click', function(e) {
   var chip = e.target.closest('.preset-chip');
   if (chip) {
-    var promptText = chip.getAttribute('data-prompt');
-    if (promptText) {
-      $('llmPrompt').value = promptText;
-      updateLLMBtn();
+    var isRef = chip.getAttribute('data-kind') === 'ref';
+    var value = isRef ? chip.getAttribute('data-ref') : chip.getAttribute('data-prompt');
+    if (value) {
+      if (isRef) $('llmRef').value = value;
+      else { $('llmPrompt').value = value; updateLLMBtn(); }
     }
   }
 });
+
+/* ---------- Custom AI prompt presets (persisted in localStorage) ---------- */
+var PRESET_KEY = 'customPresets';
+var REFS_KEY = 'customRefs';
+var customPresets = [];
+var customRefs = [];
+function loadList(key) {
+  try {
+    var v = JSON.parse(localStorage.getItem(key) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+customPresets = loadList(PRESET_KEY);
+customRefs = loadList(REFS_KEY);
+
+function persistList(key, list) {
+  try { localStorage.setItem(key, JSON.stringify(list)); } catch (e) {}
+}
+function renderCustomChips(rowId, list, kind) {
+  var row = $(rowId);
+  row.querySelectorAll('.preset-chip.custom').forEach(function (el) { el.remove(); });
+  list.forEach(function (item, idx) {
+    var chip = document.createElement('div');
+    chip.className = 'preset-chip custom';
+    chip.setAttribute('data-' + kind, item.value);
+    chip.setAttribute('data-kind', kind);
+    chip.setAttribute('data-index', idx);
+    chip.textContent = item.name;
+    chip.addEventListener('contextmenu', openPresetMenu);
+    row.appendChild(chip);
+  });
+}
+function renderPresets() { renderCustomChips('presetsRow', customPresets, 'prompt'); }
+function renderRefs() { renderCustomChips('refsRow', customRefs, 'ref'); }
+
+var modalKind = 'prompt';
+function openModal(kind) {
+  modalKind = kind === 'ref' ? 'ref' : 'prompt';
+  $('presetName').value = '';
+  $('presetPrompt').value = '';
+  if (modalKind === 'ref') {
+    $('presetModalTitle').textContent = 'Add Format Reference';
+    $('presetNameLabel').textContent = 'Button Name';
+    $('presetPromptLabel').textContent = 'Reference / Template';
+    $('presetPrompt').placeholder = 'Paste a sample layout or structure template here.';
+  } else {
+    $('presetModalTitle').textContent = 'Add AI Prompt';
+    $('presetNameLabel').textContent = 'Button Name';
+    $('presetPromptLabel').textContent = 'Prompt Instruction';
+    $('presetPrompt').placeholder = 'What should the AI do with the transcript?';
+  }
+  $('presetModal').style.display = 'flex';
+  setTimeout(function () { $('presetName').focus(); }, 10);
+}
+function closeModal() { $('presetModal').style.display = 'none'; }
+
+$('presetAdd').addEventListener('click', function () { openModal('prompt'); });
+$('refAdd').addEventListener('click', function () { openModal('ref'); });
+$('presetCancel').addEventListener('click', closeModal);
+$('presetModal').addEventListener('click', function (e) {
+  if (e.target === $('presetModal')) closeModal();
+});
+$('presetSave').addEventListener('click', function () {
+  var name = $('presetName').value.trim();
+  var value = $('presetPrompt').value.trim();
+  if (!name || !value) { $('presetName').focus(); return; }
+  if (modalKind === 'ref') {
+    customRefs.push({ name: name, value: value });
+    persistList(REFS_KEY, customRefs);
+    renderRefs();
+    $('llmRef').value = value;
+    llmSetStatus('Format reference "' + name + '" saved.', 'ok');
+  } else {
+    customPresets.push({ name: name, value: value });
+    persistList(PRESET_KEY, customPresets);
+    renderPresets();
+    $('llmPrompt').value = value;
+    updateLLMBtn();
+    llmSetStatus('Custom prompt "' + name + '" saved.', 'ok');
+  }
+  closeModal();
+});
+
+/* Right-click context menu for custom chips */
+var menuEl = $('presetCtxMenu');
+var menuPreset = null;
+function openPresetMenu(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  var kind = e.currentTarget.getAttribute('data-kind');
+  var idx = parseInt(e.currentTarget.getAttribute('data-index'), 10);
+  menuPreset = { kind: kind, index: idx };
+  menuEl.innerHTML = '';
+  var del = document.createElement('button');
+  del.textContent = kind === 'ref' ? 'Delete reference' : 'Delete prompt';
+  del.addEventListener('click', function () {
+    if (menuPreset && menuPreset.index >= 0) {
+      if (menuPreset.kind === 'ref') {
+        customRefs.splice(menuPreset.index, 1);
+        persistList(REFS_KEY, customRefs);
+        renderRefs();
+      } else {
+        customPresets.splice(menuPreset.index, 1);
+        persistList(PRESET_KEY, customPresets);
+        renderPresets();
+      }
+      llmSetStatus('Deleted.', '');
+    }
+    menuEl.style.display = 'none';
+  });
+  menuEl.appendChild(del);
+  var px = Math.min(e.clientX, window.innerWidth - menuEl.offsetWidth - 8);
+  var py = Math.min(e.clientY, window.innerHeight - 60);
+  menuEl.style.left = px + 'px';
+  menuEl.style.top = py + 'px';
+  menuEl.style.display = 'block';
+}
+function hideMenu() { menuEl.style.display = 'none'; }
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('#presetCtxMenu')) hideMenu();
+});
+window.addEventListener('blur', hideMenu);
+document.addEventListener('scroll', hideMenu, true);
 
 $('copyLlm').addEventListener('click', function () {
   var t = $('llmOut');
@@ -2392,6 +2577,8 @@ Store.listRecordings().then(function (recs) {
   $('transcriptWrap').style.display = 'block';
   updateLLMBtn();
   renderHistory();
+  renderPresets();
+  renderRefs();
 });
 
 detectDevice().then(function (device) {

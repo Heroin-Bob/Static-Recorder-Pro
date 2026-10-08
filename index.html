@@ -2355,21 +2355,21 @@ function populateCloudModels(provider, selected) {
   sel.style.display = '';
   inp.style.display = 'none';
   var models = CLOUD_MODELS[provider] || [];
+  var known = !!(selected && models.indexOf(selected) !== -1);
   sel.innerHTML = '';
-  var chosen = selected && models.indexOf(selected) === -1 ? selected : '';
   models.forEach(function (m) {
     var o = document.createElement('option');
     o.value = m;
     o.textContent = m;
     sel.appendChild(o);
   });
-  if (chosen) {
+  if (selected && !known) {
     var oc = document.createElement('option');
-    oc.value = chosen;
-    oc.textContent = chosen + ' (custom)';
+    oc.value = selected;
+    oc.textContent = selected + ' (custom)';
     sel.appendChild(oc);
   }
-  sel.value = chosen || (models[0] || '');
+  sel.value = selected || (models[0] || '');
 }
 
 function saveCloudCfg() {

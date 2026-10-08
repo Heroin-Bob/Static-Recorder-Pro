@@ -1580,7 +1580,7 @@ Recorder.init({
 $('recStart').addEventListener('click', function () { 
   Recorder.start(); 
   detectDevice().then(function(dev) {
-    var model = $('modelSelect').value;
+    var model = $('model').value;
     ensureWorkerMode().then(function(mode) {
       if (mode === 'worker') {
         try {

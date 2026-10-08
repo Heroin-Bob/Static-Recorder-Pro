@@ -1,5 +1,7 @@
 # Static Recorder Pro
 
+https://heroin-bob.github.io/Static-Recorder-Pro/
+
 > Record calls, get accurate transcripts, and draft AI notes — in your browser, on your machine, with your choice of AI.
 
 Static Recorder Pro is a fully self-contained, single-file web app. It records call audio (microphone + system audio simultaneously), transcribes it locally with Whisper, and drafts notes, replies, and follow-ups — either with a **local in-browser LLM** or (optionally) a **third-party cloud LLM API** of your choice. No backend is required; everything runs from a static page.

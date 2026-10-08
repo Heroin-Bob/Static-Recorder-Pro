@@ -1949,7 +1949,7 @@ var LLMWorkerSrc = [
   'self.onmessage = async function (e) {',
   '  var d = e.data || {};',
   '  if (d.type === "ping") { self.postMessage({ type: "ready" }); return; }',
-  '  if (d.type !== "generate") return;',
+  '  if (d.type !== "generate" && d.type !== "batched_generate") return;',
   '  try {',
   '    var mod = await import(TF_URL);',
   '    var key = d.model + "|" + d.device;',
@@ -1969,6 +1969,47 @@ var LLMWorkerSrc = [
   '      pipedKey = key;',
   '    }',
   '    self.postMessage({ type: "generating" });',
+  '    if (d.type === "batched_generate") {',
+  '      var SEG_SYS = "You are extracting key information from one part of an " +',
+  '        "audio transcript. Produce a concise summary that captures: the main " +',
+  '        "discussion points and decisions; every action item and who owns it; " +',
+  '        "all names, companies, software, commands, and any exact spellings; " +',
+  '        "and any facts that would matter when writing a final summary or note. " +',
+  '        "Use only information present in the text. Be factual and compact.";',
+  '      var segs = d.segments || [];',
+  '      var segOut = [];',
+  '      for (var s = 0; s < segs.length; s++) {',
+  '        self.postMessage({ type: "seg_progress", done: s + 1, total: segs.length });',
+  '        var r = await piped(',
+  '          [ { role: "system", content: SEG_SYS }, { role: "user", content: segs[s] } ],',
+  '          { max_new_tokens: 460, do_sample: false, repetition_penalty: 1.15 }',
+  '        );',
+  '        var txt = (r && r.generated_text) ? String(r.generated_text).trim() : "";',
+  '        if (txt) segOut.push(txt);',
+  '      }',
+  '      var combined = segOut.join("\n\n");',
+  '      if (!combined) { self.postMessage({ type: "error", message: "No segment summaries produced." }); return; }',
+  '      var finalUser = "INSTRUCTIONS:\\n" + (d.prompt || "") + "\\n";',
+  '      if (d.ref) {',
+  '        finalUser += "\\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\\n" + d.ref + "\\n";',
+  '      }',
+  '      finalUser += "\\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\\n" + combined;',
+  '      var streamer = new mod.TextStreamer(piped.tokenizer, {',
+  '        skip_prompt: true,',
+  '        skip_special_tokens: true,',
+  '        callback_function: function (text) { self.postMessage({ type: "token", text: text }); }',
+  '      });',
+  '      await piped(',
+  '        [ { role: "system", content: d.system }, { role: "user", content: finalUser } ],',
+  '        {',
+  '          max_new_tokens: d.maxTokens || 512,',
+  '          ...(d.gen || {}),',
+  '          streamer: streamer',
+  '        }',
+  '      );',
+  '      self.postMessage({ type: "complete" });',
+  '      return;',
+  '    }',
   '    var streamer = new mod.TextStreamer(piped.tokenizer, {',
   '      skip_prompt: true,',
   '      skip_special_tokens: true,',
@@ -2028,6 +2069,42 @@ var LLM_SMALL_FALLBACKS = [
   'onnx-community/SmolLM2-360M-Instruct-ONNX',
   'onnx-community/SmolLM2-135M-Instruct-ONNX',
 ];
+
+/* Approximate context windows (tokens). Used to size long transcripts. Long
+   inputs route to CPU (WASM) which reads them fully, so we only cap at the
+   model's true context — the runtime-side WebGPU shape limit is avoided by
+   switching device rather than by trimming the transcript. */
+var LLM_CTX_TOKENS = {
+  'onnx-community/Qwen2.5-1.5B-Instruct': 32768,
+  'onnx-community/Qwen2.5-0.5B-Instruct': 32768,
+  'onnx-community/SmolLM2-360M-Instruct-ONNX': 4096,
+  'onnx-community/SmolLM2-135M-Instruct-ONNX': 2048,
+};
+/* WebGPU's ONNX runtime can't allocate huge tensors; transcript inputs larger
+   than this are split into segments and processed in batches on the GPU rather
+   than trimmed or sent to slow CPU mode. */
+var WEBGPU_MAX_INPUT_CHARS = 24000;
+var LLM_SEGMENT_CHARS = 9000;   // ~2-3k tokens per segment, safely GPU-digestible
+function splitTranscript(text, maxChars) {
+  var lines = String(text || '').split('\n');
+  var segs = [], cur = '';
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i];
+    if (cur && (cur.length + line.length + 1 > maxChars)) {
+      segs.push(cur.trim());
+      cur = line;
+    } else {
+      cur = cur ? cur + '\n' + line : line;
+    }
+  }
+  if (cur.trim()) segs.push(cur.trim());
+  return segs;
+}
+function llmTranscriptBudget(model, maxNew) {
+  var ctx = LLM_CTX_TOKENS[model] || 2048;
+  var usable = ctx - 256 - maxNew;   // reserve room for instructions/system/reference + output
+  return Math.max(512, usable) * 4;  // rough chars-per-token estimate
+}
 
 var LLM_STYLES = {
   precise:  { do_sample: false, repetition_penalty: 1.2 },
@@ -2111,6 +2188,24 @@ function runLLM() {
   }
   var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
   var ref = $('llmRef').value.trim();
+  var model = $('llmModel').value;
+  var maxTokens = 512;
+  var gen = LLM_STYLES[$('llmStyle').value] || LLM_STYLES.precise;
+
+  // Large transcripts are batched on the GPU: full text is always kept, split
+  // into segments that each fit the WebGPU runtime.
+  var segments = transcript.length > WEBGPU_MAX_INPUT_CHARS
+    ? splitTranscript(transcript, LLM_SEGMENT_CHARS)
+    : [];
+
+  var trimmed = false;
+  var maxChars = llmTranscriptBudget(model, maxTokens);
+  if (transcript.length > maxChars) {
+    transcript = transcript.slice(0, maxChars) +
+      '\n\n[... transcript was too long for the selected model, so it was auto-trimmed to fit. ' +
+      'For the full call, split it into shorter parts or use a model with a longer context. ...]';
+    trimmed = true;
+  }
   var userText = 'INSTRUCTIONS:\n' + prompt + '\n';
   if (ref) {
     userText += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' +
@@ -2120,12 +2215,19 @@ function runLLM() {
     transcript;
   var job = {
     id: ++llmJobSeq,
-    model: $('llmModel').value,
+    model: model,
     system: LLM_SYSTEM,
     user: userText,
-    maxTokens: 512,
-    gen: LLM_STYLES[$('llmStyle').value] || LLM_STYLES.precise,
+    segments: segments,
+    prompt: prompt,
+    ref: ref,
+    maxTokens: maxTokens,
+    gen: gen,
+    transcriptLen: transcript.length,
   };
+  if (trimmed) {
+    llmSetStatus('Transcript was too long for the selected model\'s context, so it was trimmed.', '');
+  }
   var selMb = LLM_MODEL_MB[job.model] || 9999;
   job.fallbacks = LLM_SMALL_FALLBACKS.filter(function (m) { return LLM_MODEL_MB[m] < selMb; });
   job.fallbackIdx = 0;
@@ -2152,6 +2254,11 @@ function startLLMJob(job) {
     job.device = device;
     var note = $('llmDeviceNote');
     if (note) note.textContent = llmDeviceNoteText(device);
+    var batched = device === 'webgpu' && job.segments && job.segments.length > 0;
+    if (batched) {
+      llmSetStatus('Transcript is large — summarizing in ' + job.segments.length +
+        ' parts on the GPU, then writing the final note.', '');
+    }
     var key = job.model + '|' + device;
     if (llmWorker && llmWorkerKey !== key) killLLMWorker();
     if (!llmWorker) {
@@ -2167,10 +2274,18 @@ function startLLMJob(job) {
       }
     }
     llmMode = 'worker';
-    llmWorker.postMessage({
-      type: 'generate', model: job.model, device: device, f16: _deviceF16,
-      system: job.system, user: job.user, maxTokens: job.maxTokens, gen: job.gen
-    });
+    if (batched) {
+      llmWorker.postMessage({
+        type: 'batched_generate', model: job.model, device: device, f16: _deviceF16,
+        system: job.system, gen: job.gen, maxTokens: job.maxTokens,
+        segments: job.segments, prompt: job.prompt, ref: job.ref
+      });
+    } else {
+      llmWorker.postMessage({
+        type: 'generate', model: job.model, device: device, f16: _deviceF16,
+        system: job.system, user: job.user, maxTokens: job.maxTokens, gen: job.gen
+      });
+    }
   });
 }
 
@@ -2219,6 +2334,10 @@ function onLLMMessage(e) {
   } else if (d.type === 'generating') {
     llmSetBar(100, 'Generating... 0 tokens');
     llmSetStatus('Model ready. Generating locally...', '');
+  } else if (d.type === 'seg_progress') {
+    llmSetBar(100, 'Summarizing parts of the transcript... ' + d.done + '/' + d.total);
+    llmSetStatus('Reading the full transcript in ' + d.total + ' parts, ' +
+      d.done + '/' + d.total + ' summarized so far.', '');
   } else if (d.type === 'token') {
     appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
   } else if (d.type === 'complete') {

@@ -1,8 +1,8 @@
 # Static Recorder Pro
 
-> Record calls, get accurate transcripts, and draft AI notes — **all in your browser. Nothing is uploaded. Nothing leaves your machine.**
+> Record calls, get accurate transcripts, and draft AI notes — in your browser, on your machine, with your choice of AI.
 
-Static Recorder Pro is a fully self-contained, single-file web app. It records call audio (microphone + system audio simultaneously), transcribes it locally with Whisper, and writes summaries/notes/replies with a small local language model. It has no backend, no API keys, no accounts, and no data ever leaves your device.
+Static Recorder Pro is a fully self-contained, single-file web app. It records call audio (microphone + system audio simultaneously), transcribes it locally with Whisper, and drafts notes, replies, and follow-ups — either with a **local in-browser LLM** or (optionally) a **third-party cloud LLM API** of your choice. No backend is required; everything runs from a static page.
 
 ---
 
@@ -12,22 +12,40 @@ Static Recorder Pro is a fully self-contained, single-file web app. It records c
 | --- | --- |
 | **Dual-track call recording** | Records the **Agent (microphone)** and **Caller (system audio)** as separate tracks so voices are easy to tell apart. |
 | **Local transcription** | Whisper runs in-browser via [Transformers.js](https://huggingface.co/docs/transformers.js). Produces timestamped, speaker-labeled transcripts. |
-| **Local AI notes** | A small instruction-following LLM summarizes the call, drafts reply emails, lists action items, and more — from the transcript. |
-| **Call history** | Every recording + transcript is saved locally and listed with timestamps, durations, and quick actions. |
-| **Export** | Download individual tracks (WAV), the full transcript (.txt), or the AI response (.txt). |
+| **Local AI notes** | A small in-browser LLM (WebGPU/WASM) summarizes the call, drafts reply emails, lists action items, and more — no internet needed. |
+| **Cloud AI notes** | Optional: connect OpenAI, Anthropic (Claude), Google Gemini, Groq, OpenRouter, or any OpenAI-compatible endpoint with an API key. Streams quality results with huge context. |
+| **Smart transcript compaction** | Timestamps are stripped and consecutive same-speaker lines merged before AI processing — often ~45% smaller, so the AI gets more call in fewer tokens. |
+| **Rich text formatting** | The note template has a formatting toolbar (bold, italic, underline, headers, lists); the AI output renders that formatting and copies it as rich text. |
+| **Custom AI prompt presets** | Save your own one-click prompt chips (and format references), persist them between visits, manage them by right-click. |
+| **Call history** | Every recording + transcript is saved locally with timestamps, durations, and quick actions — re-transcribe, load into the AI, save transcript `.txt`, or delete. |
+| **Export** | Download individual tracks (WAV), the full transcript (.txt), the AI response (.txt), or copy the AI response *with formatting*. |
 
 ---
 
-## 100% in-browser & local-first
+## Local-First, With an Optional Cloud Mode
 
-- **No server.** The app is a single static `index.html`. It can be opened straight from disk (`file://`) or hosted on any static host (e.g. GitHub Pages).
-- **No API keys, no accounts, no analytics.**
-- **Nothing is uploaded.** Recordings, transcripts, and AI runs never leave your machine.
-- **Works offline** after the models have been downloaded & cached once.
+The AI Co-Pilot has two modes, switched with a tab at the top of the AI panel:
 
-### Models that run on device
+### Local (In-Browser) — default
+- Entirely offline after the one-time model download; **no API keys, no accounts, no data leaves your device**.
+- Runs Whisper + a small LLM through [Transformers.js](https://huggingface.co/docs/transformers.js) on **WebGPU** (falling back to WASM/CPU).
+- Private and free, but constrained by browser memory and the size of small local models (see [Known limitations](#known-limitations)).
 
-**Transcription (Whisper)**
+### Cloud API — optional
+- Bring your own key from **OpenAI, Anthropic (Claude), Google Gemini, Groq, OpenRouter**, or a **Custom OpenAI-compatible endpoint** (LM Studio, Ollama, enterprise gateways, etc.).
+- Per-provider model dropdowns (e.g. `gemini-3.8-flash`, `claude-sonnet-4-5`, `gpt-4o-mini`), or type any model in Custom.
+- Responses **stream token-by-token**; the same prompt instruction, format reference, compaction, and presets apply.
+- No browser memory limits — full 128k+ context handling of long calls.
+
+> **Note:** the API key is stored only in the page's `localStorage` and is sent **directly** from your browser to the provider. Use a restricted/limited key — anyone with access to the device can read it.
+
+**Providers that are CORS-enabled** (work directly from a static page): OpenAI, Anthropic (via its browser-access header), Google Gemini, Groq, OpenRouter, and Custom endpoints that send CORS headers. **OpenCode Go is notably excluded** — its API sends no CORS headers, so it cannot be called from a static page; it must be used from the OpenCode app itself.
+
+---
+
+## Models
+
+### Local transcription (Whisper)
 
 | Model | Purpose | Size |
 | --- | --- | --- |
@@ -35,7 +53,7 @@ Static Recorder Pro is a fully self-contained, single-file web app. It records c
 | [whisper-base.en](https://huggingface.co/onnx-community/whisper-base.en) | Default — balanced | ~40–90 MB |
 | [whisper-small.en](https://huggingface.co/onnx-community/whisper-small.en) | High accuracy | ~150–230 MB |
 
-**AI notes (LLM)**
+### Local AI notes (in-browser LLM)
 
 | Model | Purpose | Size |
 | --- | --- | --- |
@@ -44,7 +62,10 @@ Static Recorder Pro is a fully self-contained, single-file web app. It records c
 | [SmolLM2 360M Instruct](https://huggingface.co/onnx-community/SmolLM2-360M-Instruct-ONNX) | Fast / CPU mode | ~0.3 GB |
 | [SmolLM2 135M Instruct](https://huggingface.co/onnx-community/SmolLM2-135M-Instruct-ONNX) | Smallest / fastest | ~0.2 GB |
 
-Models are downloaded from Hugging Face **once** and cached by the browser; every run afterward works fully offline.
+Local models are downloaded from Hugging Face **once** and cached by the browser; every run afterward works fully offline.
+
+### Cloud AI notes
+Model lists are populated per provider (e.g. `gemini-3.8-flash` for Gemini, `gpt-4o-mini` for OpenAI, `claude-sonnet-4-5` for Anthropic). If your saved model isn't in the list, it appears as an extra `(custom)` option so nothing is lost.
 
 ---
 
@@ -55,11 +76,13 @@ Models are downloaded from Hugging Face **once** and cached by the browser; ever
 | HTML + CSS + vanilla JavaScript | Entire UI (single self-contained file) |
 | [MediaRecorder API](https://developer.mozilla.org/en-US/docs/Web/API/MediaRecorder) | Browser audio capture (mic + tab/system audio) |
 | [Web Audio API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API) | Analyzers, live waveform visualizer, native 16 kHz resampling |
-| [Transformers.js](https://huggingface.co/docs/transformers.js) | Rust/WASM + WebGPU runtime for Whisper & the LLM |
-| [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API) | Accelerated inference when available (falls back to WASM/CPU) |
+| [Transformers.js](https://huggingface.co/docs/transformers.js) | Runtime for local Whisper & LLM (WebGPU → WASM fallback) |
+| [WebGPU](https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API) | GPU acceleration for local inference when available |
 | [OPFS](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API) | Disk-backed streaming for large recordings |
-| [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) | Local storage for recordings & transcripts |
-| [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Worker_API) | Keeps transcription/AI off the main thread for a smooth UI |
+| [IndexedDB](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API) | Local storage for recordings, transcripts & prompt presets |
+| [Web Workers](https://developer.mozilla.org/en-US/docs/Web/API/Web_Worker_API) | Keeps local transcription/AI off the main thread |
+| [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) + SSE streaming | Direct browser-to-provider streaming calls to third-party LLMs |
+| `localStorage` | Cloud API config, API key, AI mode & custom presets |
 
 ---
 
@@ -67,15 +90,13 @@ Models are downloaded from Hugging Face **once** and cached by the browser; ever
 
 ### 1. Open the app
 
-Simply open `index.html` in any modern browser (Chrome, Edge, Firefox). For **best AI model performance**, use Chrome or Edge with **hardware acceleration / WebGPU enabled**.
+Open `index.html` in any modern browser (Chrome, Edge, Firefox — **Chrome/Edge recommended for WebGPU**). It works from `file://`, GitHub Pages, or any static host.
 
 ### 2. Record a call
 
 1. Press **Start Recording**.
-2. When prompted, choose your microphone, then share the call tab/window **and include system audio** (so the Caller's voice is captured).
-3. Watch the live waveform meters, then press **Stop**.
-
-> Your recording is saved locally the moment you stop.
+2. Choose your microphone, then share the call tab/window **and include system audio** (so the Caller's voice is captured).
+3. Watch the live waveform meters, then press **Stop** — the recording saves locally instantly.
 
 ### 3. Transcribe
 
@@ -83,56 +104,95 @@ Simply open `index.html` in any modern browser (Chrome, Edge, Firefox). For **be
 2. Whisper processes the audio in chunks with live, streaming output.
 3. You get a timestamped, speaker-labeled transcript (`[Agent]` / `[Caller]`).
 
-### 4. Generate AI notes
+### 4. Generate AI notes (Local mode)
 
-1. The transcript appears in the **AI Assistant** box below.
-2. (Optional) type a prompt, e.g. *"Summarize this call in 5 bullets"* or *"Draft a reply email to the client."*
-3. Pick a **model** and **output style**, then press **Generate with AI**.
-4. Responses stream in token-by-token. Select all or download as `.txt`.
+1. The transcript appears in the **AI Assistant** box.
+2. Choose **Local (In-Browser)** (default), pick a model + output style.
+3. (Optional) type a prompt instruction, e.g. *"Summarize this call in 5 bullets."*
+4. Press **Generate with AI** — responses stream in token-by-token.
 
-### 5. Manage history
+### 5. Generate AI notes (Cloud mode)
 
-Use the **Call History** tab to listen, re-transcribe, load any saved transcript back into the AI, or delete recordings — all wiped cleanly when you choose **Clear All**.
+1. Switch to the **Cloud API** tab.
+2. Pick a **provider** (e.g. OpenAI), choose its **model**, and paste your **API key** (saved in this browser only).
+3. For **Custom**, enter your base URL (e.g. `https://my-endpoint.example/v1`) and model name.
+4. Press **Generate with AI** — the request goes straight from your browser to the provider and streams back.
+
+### 6. Note templates & formatting
+
+- Use the **Format Reference / Template** box to show the AI the layout you want (ConnectWise notes, emails, etc.).
+- The small toolbar (B / I / U / H / • / 1.) inserts formatting into the template: `**bold**`, `*italic*`, `## headers`, and lists.
+- The AI output **renders that formatting live**, and **Copy AI Text (Rich)** pastes it into ConnectWise/Word/email with the formatting intact.
+
+### 7. Custom prompt & reference presets
+
+- Click the **`+`** button next to the AI Prompt Instruction chips to save your own prompt as a reusable chip.
+- Do the same for Format References — both persist across visits.
+- **Right-click** a custom chip to delete it.
+
+### 8. Manage history
+
+The **Call History** tab lets you: listen to tracks, **Save Agent/Caller (.wav)**, **Save Transcript (.txt)**, re-transcribe, **Use Transcript** (load into the AI), **AI Draft** (load + generate immediately), refresh, or **Clear All** — all stored locally in IndexedDB.
 
 ---
 
-## Fix slow AI generation
+## Fix slow local AI generation
 
-AI note generation is dramatically faster when it runs on the GPU. The page shows which mode you're currently using in a small badge in the **top-right of the screen** (the Status bar): `WebGPU Active` (GPU accelerated) or `WASM CPU Mode` (running on the CPU, often several times slower).
+Local AI generation is dramatically faster on the GPU. A badge in the **top-right of the screen** shows the mode:
 
-**If you see `WASM CPU Mode`, here's how to get `WebGPU Active`:**
+- `WebGPU Active` — GPU accelerated (fast)
+- `WASM CPU Mode` — CPU (works, slower)
+- `Cloud API Mode` — using your configured cloud provider
+
+**If you see `WASM CPU Mode` and want WebGPU:**
 
 1. Open `chrome://flags/#enable-vulkan` and set **Vulkan** to **Enabled**.
-2. (Optional, to be safe) set these to **Enabled** too:
+2. (Optional, to be safe) enable:
    - `chrome://flags/#enable-unsafe-webgpu`
    - `chrome://flags/#ignore-gpu-blocklist`
 3. **Restart Chrome.**
-4. Reload this page — the badge should now read **WebGPU Active**.
+4. Reload — the badge should read **WebGPU Active**.
 
-Notes & requirements:
+Notes:
 
-- WebGPU requires **Chrome or Edge**. Firefox and Safari don't expose a working WebGPU adapter for this app, so they always fall back to CPU. **Note for Firefox users:** everything still works, it's just slower — the app runs in "WASM CPU Mode" and defaults to the smaller SmolLM2 model to keep generation usable. Firefox has experimental WebGPU (enable `dom.webgpu.enabled` in `about:config`), but support for this app's runtime is limited and unstable, so **Chrome/Edge is recommended for GPU-accelerated AI**.
-- Make sure **hardware acceleration** is on: Settings → System → "Use graphics acceleration when available."
-- On **Linux**, the WebGPU flag is the usual missing piece — Chrome's WebGPU backend needs Vulkan to reach the GPU, and it ships disabled by default.
-- When running on **Windows/macOS**, WebGPU is generally on by default; if you still see WASM mode, check the three flags above.
-- If a model still runs out of memory even on WebGPU, the app automatically retries with the next smaller model.
+- WebGPU requires **Chrome or Edge**. Firefox/Safari always fall back to CPU (everything still works, just slower).
+- Keep hardware acceleration on: Settings → System → *"Use graphics acceleration when available."*
+- On **Linux**, the Vulkan flag is the usual missing piece — Chrome ships it disabled by default.
+- If a local model runs out of memory, the app automatically retries with the next smaller model, and switches to CPU if WebGPU execution fails.
+
+---
+
+## Smart transcript compaction
+
+When you press **Generate with AI**, the transcript is compacted in the background (the visible box stays unchanged):
+
+`[00:00:01.290 - 00:00:07.930] [Caller] "We've all heard the saying, don't mess with Texas, but there's no movie that makes"`  
+`[00:00:07.930 - 00:00:11.210] [Caller] "it more explicit than the Texas Chainsaw Massacre."`
+
+becomes:
+
+`[Caller] "We've all heard the saying, don't mess with Texas, but there's no movie that makes it more explicit than the Texas Chainsaw Massacre."`
+
+Timestamps are removed and consecutive same-speaker lines are merged — typically **~45% fewer characters**, so the AI reads more of the call within its context budget.
 
 ---
 
 ## Tips & notes
 
-- **First run downloads models.** Allow time for the initial model download; it's cached afterwards.
-- **Choose the right AI model for your machine.** Use `SmolLM2 360M` on CPU-only machines, `Qwen2.5 1.5B` on WebGPU for best quality. If a model runs out of memory, the app automatically retries with the next smaller one.
-- **Trim long transcripts** in the editor if the AI seems to lose context on very long calls.
-- **Privacy by design.** Close a long call, restart the browser — your history persists locally in IndexedDB.
+- **First local run downloads models.** Allow time; they're cached afterwards.
+- **Long calls + local mode:** browser memory limits the local path. Keep transcripts compact (the app does this automatically) or use **Cloud mode**, which handles full-length calls easily.
+- **Cloud keys are stored in the browser** — use a restricted key with a spend cap.
+- **OpenCode Go isn't supported from a static page** (no CORS); use it with the official OpenCode app.
+- **Choose the right local model for your machine.** SmolLM2 360M for CPU-only machines; Qwen2.5 on WebGPU for best quality.
 
 ---
 
 ## Privacy & security
 
-- **Zero network transmission** of your audio or text (except the one-time model downloads from Hugging Face).
+- **Local mode: zero network transmission** of your audio or text (except one-time model downloads from Hugging Face).
+- **Cloud mode:** your transcript, prompt, reference, and key are sent **directly** from your browser to the provider you configure — with no intermediaries in between, but the provider's terms apply.
 - **No telemetry, no analytics, no cookies.**
-- All data lives in your browser's local storage. **Clearing site data erases it permanently.**
+- Recordings, transcripts, and settings live in your browser's local storage. **Clearing site data erases them permanently.**
 
 ---
 
@@ -141,9 +201,9 @@ Notes & requirements:
 | File | Purpose |
 | --- | --- |
 | `index.html` | The entire application (HTML, CSS, JS) |
-| `sw.js`, `coi-serviceworker.js` | Service worker + COOP/COEP so WebGPU/WASM works when hosted |
-| `manifest.webmanifest` | PWA metadata |
-| `icon.svg` | App icon |
+| `sw.js` | Service worker: offline shell caching for hosted use |
+| `manifest.webmanifest`, `icon.svg` | PWA metadata / icon |
+| `coi-serviceworker.js` | Legacy file (no longer loaded; kept for reference) |
 
 ---
 
@@ -153,19 +213,21 @@ Notes & requirements:
 | --- | --- |
 | **Modern browser** | Chrome / Edge / Firefox recommended |
 | **Microphone + screen-share permission** | Required to record calls |
-| **WebGPU** (optional) | Needed for large AI models; plain WASM/CPU works without it |
-| **Storage space** | A few GB free for models + long recordings |
+| **WebGPU** (optional) | Speeds up local AI; plain WASM/CPU works without it |
+| **API key** (optional) | Only needed for Cloud API mode |
+| **Storage space** | A few GB free for local models + long recordings |
 
 ---
 
 ## Known limitations
 
-- Small local models are fast and private, but less capable than cloud LLMs — they can occasionally simplify nuance or follow formatting loosely.
-- Transcribing very long audio takes time (a few minutes per ~30 min of audio on CPU).
-- Without WebGPU, large LLMs may hit browser memory limits (the app auto-falls back to smaller models).
+- **Small local models** are private but less capable than cloud LLMs — they can simplify nuance or follow formatting loosely.
+- **Local mode memory ceiling:** WebAssembly is 32-bit (~4 GB heap cap), so long conversations in local mode can hit ONNX "tensor too large" / out-of-memory errors. The app auto-falls back to CPU and smaller models, but **Cloud mode is the reliable route for long calls**.
+- **Cloud mode requires CORS-enabled providers** — OpenAI, Anthropic, Gemini, Groq, OpenRouter, and custom CORS-enabled endpoints work; others (e.g. OpenCode Go) don't.
+- Trimming/compaction helps the AI, but the visible transcript is never modified without your say-so.
 
 ---
 
 ## License
 
-Provided for personal/learning use. Models are covered by their respective licenses (Whisper + Llama-derived ONNX repos — see Hugging Face).
+Provided for personal/learning use. Local models are covered by their respective licenses (Whisper + ONNX repos — see Hugging Face). Cloud usage is subject to your provider's terms.

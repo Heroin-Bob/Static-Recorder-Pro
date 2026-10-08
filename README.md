@@ -96,6 +96,29 @@ Use the **Call History** tab to listen, re-transcribe, load any saved transcript
 
 ---
 
+## Fix slow AI generation
+
+AI note generation is dramatically faster when it runs on the GPU. The page shows which mode you're currently using in a small badge in the **top-right of the screen** (the Status bar): `WebGPU Active` (GPU accelerated) or `WASM CPU Mode` (running on the CPU, often several times slower).
+
+**If you see `WASM CPU Mode`, here's how to get `WebGPU Active`:**
+
+1. Open `chrome://flags/#enable-vulkan` and set **Vulkan** to **Enabled**.
+2. (Optional, to be safe) set these to **Enabled** too:
+   - `chrome://flags/#enable-unsafe-webgpu`
+   - `chrome://flags/#ignore-gpu-blocklist`
+3. **Restart Chrome.**
+4. Reload this page — the badge should now read **WebGPU Active**.
+
+Notes & requirements:
+
+- WebGPU requires **Chrome or Edge**. Firefox and Safari don't expose a working WebGPU adapter for this app, so they always fall back to CPU. **Note for Firefox users:** everything still works, it's just slower — the app runs in "WASM CPU Mode" and defaults to the smaller SmolLM2 model to keep generation usable. Firefox has experimental WebGPU (enable `dom.webgpu.enabled` in `about:config`), but support for this app's runtime is limited and unstable, so **Chrome/Edge is recommended for GPU-accelerated AI**.
+- Make sure **hardware acceleration** is on: Settings → System → "Use graphics acceleration when available."
+- On **Linux**, the WebGPU flag is the usual missing piece — Chrome's WebGPU backend needs Vulkan to reach the GPU, and it ships disabled by default.
+- When running on **Windows/macOS**, WebGPU is generally on by default; if you still see WASM mode, check the three flags above.
+- If a model still runs out of memory even on WebGPU, the app automatically retries with the next smaller model.
+
+---
+
 ## Tips & notes
 
 - **First run downloads models.** Allow time for the initial model download; it's cached afterwards.

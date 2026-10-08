@@ -1596,6 +1596,7 @@ $('recStop').addEventListener('click', function () { Recorder.stop(); });
 /* ---------- Transcription flow ---------- */
 var _devicePromise = null;
 var _deviceLabel = '';
+var _deviceF16 = false;
 var _deviceDiag = null;
 function detectDevice() {
   if (_devicePromise) return _devicePromise;
@@ -1610,6 +1611,9 @@ function detectDevice() {
           if (info.description && parts.length === 0) parts.push(info.description);
         }
         _deviceLabel = parts.join(' ').trim();
+        if (typeof adapter.features !== 'undefined' && adapter.features && adapter.features.has) {
+          _deviceF16 = !!adapter.features.has('shader-f16');
+        }
       } catch (e) { _deviceLabel = ''; }
       return 'webgpu';
     }
@@ -1833,7 +1837,7 @@ var LLMWorkerSrc = [
   '      self.postMessage({ type: "loading" });',
   '      piped = await mod.pipeline("text-generation", d.model, {',
   '        device: d.device,',
-  '        dtype: d.device === "webgpu" ? "q4f16" : "q4",',
+  '        dtype: (d.device === "webgpu" && d.f16) ? "q4f16" : "q4",',
   '        session_options: d.device === "webgpu" ? {} : { enableMemPattern: false, enableCpuMemArena: false },',
   '        progress_callback: function (x) {',
   '          if (x && typeof x.progress === "number")',
@@ -2041,7 +2045,7 @@ function startLLMJob(job) {
     }
     llmMode = 'worker';
     llmWorker.postMessage({
-      type: 'generate', model: job.model, device: device,
+      type: 'generate', model: job.model, device: device, f16: _deviceF16,
       system: job.system, user: job.user, maxTokens: job.maxTokens, gen: job.gen
     });
   });
@@ -2117,7 +2121,7 @@ function llmMainThread(job) {
     modRef = mod;
     return mod.pipeline('text-generation', job.model, {
       device: job.device,
-      dtype: job.device === 'webgpu' ? 'q4f16' : 'q4',
+      dtype: (job.device === 'webgpu' && _deviceF16) ? 'q4f16' : 'q4',
       session_options: job.device === 'webgpu' ? {} : { enableMemPattern: false, enableCpuMemArena: false },
       progress_callback: function (x) {
         if (llmAbort) return;

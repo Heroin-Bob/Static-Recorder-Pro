@@ -509,6 +509,38 @@
     border-color: #a3e635;
   }
 
+  /* AI mode tabs (Local vs Cloud API) */
+  .ai-mode-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 12px 0 14px;
+  }
+  .ai-mode-tab {
+    padding: 7px 14px;
+    border-radius: 8px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  .ai-mode-tab.active {
+    background: rgba(56, 189, 248, 0.15);
+    border-color: var(--accent-cyan);
+    color: var(--text-main);
+  }
+  #cloudKey, #cloudModel, #cloudBase {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 9px 10px;
+    font: inherit;
+  }
+
   /* Modal */
   .modal-overlay {
     position: fixed;
@@ -825,7 +857,7 @@
           <div class="card-header">
             <div class="card-title">
               <svg viewBox="0 0 24 24"><path d="M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z"/></svg>
-              Local AI Co-Pilot <span color="yellow">(beta, may be slow or unresponsive)</span>
+              Local AI Co-Pilot
             </div>
           </div>
 
@@ -833,6 +865,12 @@
             Runs an LLM entirely inside your browser (WebGPU/WASM) to extract notes, action items, or follow-ups.
           </div>
 
+          <div class="ai-mode-tabs">
+            <button type="button" class="ai-mode-tab active" id="aiModeLocal" data-mode="local">Local (In-Browser)</button>
+            <button type="button" class="ai-mode-tab" id="aiModeCloud" data-mode="cloud">Cloud API</button>
+          </div>
+
+          <div id="aiLocalPanel">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="form-group">
               <label for="llmModel">AI Model</label>
@@ -852,6 +890,38 @@
                 <option value="creative">Creative (Drafting &amp; Formatting)</option>
               </select>
             </div>
+          </div>
+          </div>
+
+          <div id="aiCloudPanel" style="display:none">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+              <div class="form-group">
+                <label for="cloudProvider">Provider</label>
+                <select id="cloudProvider">
+                  <option value="openai" selected>OpenAI</option>
+                  <option value="anthropic">Anthropic (Claude)</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="openrouter">OpenRouter</option>
+                  <option value="groq">Groq</option>
+                  <option value="opencodego">OpenCode Go</option>
+                  <option value="custom">Custom (OpenAI-compatible)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="cloudModel">Model</label>
+                <select id="cloudModel"></select>
+                <input id="cloudModelCustom" type="text" style="display:none" placeholder="e.g. my-custom-model" autocomplete="off" spellcheck="false">
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="cloudKey">API Key</label>
+              <input id="cloudKey" type="password" placeholder="sk-..." autocomplete="off" spellcheck="false">
+            </div>
+            <div class="form-group" id="cloudBaseWrap" style="display:none">
+              <label for="cloudBase">Base URL</label>
+              <input id="cloudBase" type="text" placeholder="https://my-endpoint.example/v1" autocomplete="off" spellcheck="false">
+            </div>
+            <div class="hint">The key is saved only in this browser (localStorage) and sent directly from your browser to the provider. Use a restricted/limited key — anyone with access to this device can read it.</div>
           </div>
 
           <div class="form-group">
@@ -1419,10 +1489,6 @@ var ASRWorkerSrc = [
   '  try {',
   '    if (pipedKey !== (data.model + "|" + data.device)) {',
   '      var mod = await import(TF_URL);',
-  '      try {',
-  '        var threadsOk = typeof SharedArrayBuffer !== "undefined" && (self.crossOriginIsolated === true);',
-  '        mod.env.backends.onnx.wasm.numThreads = threadsOk ? 4 : 1;',
-  '      } catch (e) {}',
   '      var pipelineFn = mod.pipeline;',
   '      self.postMessage({ type: "stage", stage: "loading" });',
   '      piped = await pipelineFn("automatic-speech-recognition", data.model, {',
@@ -1953,17 +2019,9 @@ var LLMWorkerSrc = [
   'self.onmessage = async function (e) {',
   '  var d = e.data || {};',
   '  if (d.type === "ping") { self.postMessage({ type: "ready" }); return; }',
-  '  if (d.type !== "generate" && d.type !== "smoke") return;',
+  '  if (d.type !== "generate") return;',
   '  try {',
   '    var mod = await import(TF_URL);',
-  '    try {',
-  '      // Multi-threaded WASM needs SharedArrayBuffer (cross-origin isolation),',
-  '      // which GitHub Pages cannot provide. Threads silently misbehave without',
-  '      // it ("table index is out of bounds" traps) — force the stable single-',
-  '      // thread WASM core; GPU ops still run on the WebGPU backend.',
-  '      var threadsOk = typeof SharedArrayBuffer !== "undefined" && (self.crossOriginIsolated === true);',
-  '      mod.env.backends.onnx.wasm.numThreads = threadsOk ? 4 : 1;',
-  '    } catch (e) {}',
   '    var key = d.model + "|" + d.device;',
   '    if (!piped || pipedKey !== key) {',
   '      self.postMessage({ type: "loading" });',
@@ -1979,19 +2037,6 @@ var LLMWorkerSrc = [
   '        }',
   '      });',
   '      pipedKey = key;',
-  '    }',
-  '    if (d.type === "smoke") {',
-  '      var smokeOk = false;',
-  '      try {',
-  '        var smoke = await piped(',
-  '          [ { role: "system", content: "Reply with exactly one word." }, { role: "user", content: "Test" } ],',
-  '          { max_new_tokens: 8, do_sample: false }',
-  '        );',
-  '        var smokeText = (smoke && smoke.generated_text) ? String(smoke.generated_text).trim() : "";',
-  '        smokeOk = smokeText.length > 0;',
-  '      } catch (errSmoke) { smokeOk = false; }',
-  '      self.postMessage({ type: "smoke", ok: smokeOk });',
-  '      return;',
   '    }',
   '    self.postMessage({ type: "generating" });',
   '    var streamer = new mod.TextStreamer(piped.tokenizer, {',
@@ -2069,6 +2114,37 @@ function llmTranscriptBudget(model, maxNew) {
   return Math.max(512, usable) * 4;  // rough chars-per-token estimate
 }
 
+/* Compresses a timestamped transcript for AI processing (background step on
+   Generate): strips [start - end] timestamps and merges consecutive lines from
+   the same speaker, so labels and linebreaks aren't wasted on the model. */
+function compactTranscript(text) {
+  var RE = /^\s*\[([\d:.]+(?:\s*-\s*[\d:.]+)?)\]\s*\[([^\]]*)\]\s+(.*)$/;
+  var lines = String(text || '').split('\n');
+  var out = [], curLabel = null, curText = [];
+  function flush() {
+    if (curText.length) {
+      if (curLabel) out.push('[' + curLabel + '] "' + curText.join(' ') + '"');
+      else out.push(curText.join(' '));
+    }
+    curLabel = null; curText = [];
+  }
+  for (var i = 0; i < lines.length; i++) {
+    var line = lines[i].trim();
+    if (!line) continue;
+    var m = line.match(RE);
+    if (m) {
+      if (curLabel !== m[2]) flush();
+      curLabel = m[2];
+      curText.push(m[3].replace(/^"|"$/g, ''));
+    } else {
+      flush();
+      out.push(line);
+    }
+  }
+  flush();
+  return out.join('\n');
+}
+
 var LLM_STYLES = {
   precise:  { do_sample: false, repetition_penalty: 1.2 },
   balanced: { do_sample: true,  temperature: 0.5, top_p: 0.95, repetition_penalty: 1.15 },
@@ -2142,6 +2218,237 @@ function finishLLM(result) {
   }
 }
 
+/* ---------- Cloud API mode (third-party LLM, direct from the browser) ---------- */
+var AI_MODE_KEY = 'aiMode', CLOUD_CFG_KEY = 'cloudCfg';
+var aiMode = 'local';
+try { aiMode = localStorage.getItem(AI_MODE_KEY) === 'cloud' ? 'cloud' : 'local'; } catch (e) {}
+var cloudCfg = { provider: 'openai', model: '', key: '', base: '' };
+try {
+  var ccRaw = JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || '{}');
+  if (ccRaw && typeof ccRaw === 'object') {
+    ['provider', 'model', 'key', 'base'].forEach(function (k) { if (ccRaw[k]) cloudCfg[k] = ccRaw[k]; });
+  }
+} catch (e) {}
+var CLOUD_MODELS = {
+  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o3-mini', 'o1'],
+  anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-1', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
+  gemini: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
+  openrouter: ['openai/gpt-4o-mini', 'openai/gpt-4o', 'anthropic/claude-sonnet-4-5', 'anthropic/claude-3.7-sonnet', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct', 'mistralai/mistral-large-latest'],
+  groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen-2.5-32b'],
+  opencodego: ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3', 'kimi-k2.7-code', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro', 'longcat-2.0', 'hy4-preview'],
+  custom: [],
+};
+var CLOUD_MAX_TOKENS = 1024;
+
+function populateCloudModels(provider, selected) {
+  var sel = $('cloudModel'), inp = $('cloudModelCustom');
+  if (provider === 'custom') {
+    sel.style.display = 'none';
+    inp.style.display = '';
+    inp.value = (selected && typeof selected === 'string') ? selected : '';
+    return;
+  }
+  sel.style.display = '';
+  inp.style.display = 'none';
+  var models = CLOUD_MODELS[provider] || [];
+  sel.innerHTML = '';
+  var chosen = selected && models.indexOf(selected) === -1 ? selected : '';
+  models.forEach(function (m) {
+    var o = document.createElement('option');
+    o.value = m;
+    o.textContent = m;
+    sel.appendChild(o);
+  });
+  if (chosen) {
+    var oc = document.createElement('option');
+    oc.value = chosen;
+    oc.textContent = chosen + ' (custom)';
+    sel.appendChild(oc);
+  }
+  sel.value = chosen || (models[0] || '');
+}
+
+function saveCloudCfg() {
+  cloudCfg.provider = $('cloudProvider').value;
+  cloudCfg.model = cloudCfg.provider === 'custom' ? $('cloudModelCustom').value.trim() : $('cloudModel').value;
+  cloudCfg.key = $('cloudKey').value;
+  cloudCfg.base = $('cloudBase').value.trim();
+  try { localStorage.setItem(CLOUD_CFG_KEY, JSON.stringify(cloudCfg)); } catch (e) {}
+}
+function applyCloudCfgToUI() {
+  $('cloudProvider').value = cloudCfg.provider || 'openai';
+  populateCloudModels(cloudCfg.provider || 'openai', cloudCfg.model);
+  $('cloudKey').value = cloudCfg.key || '';
+  $('cloudBase').value = cloudCfg.base || '';
+  $('cloudBaseWrap').style.display = cloudCfg.provider === 'custom' ? '' : 'none';
+}
+function setAIMode(mode) {
+  aiMode = mode === 'cloud' ? 'cloud' : 'local';
+  try { localStorage.setItem(AI_MODE_KEY, aiMode); } catch (e) {}
+  $('aiModeLocal').classList.toggle('active', aiMode === 'local');
+  $('aiModeCloud').classList.toggle('active', aiMode === 'cloud');
+  $('aiLocalPanel').style.display = aiMode === 'local' ? '' : 'none';
+  $('aiCloudPanel').style.display = aiMode === 'cloud' ? '' : 'none';
+  var note = $('llmDeviceNote');
+  if (note) {
+    if (aiMode === 'cloud') note.textContent = 'Cloud API Mode';
+    else detectDevice().then(function (device) { note.textContent = llmDeviceNoteText(device); });
+  }
+}
+$('aiModeLocal').addEventListener('click', function () { setAIMode('local'); });
+$('aiModeCloud').addEventListener('click', function () { setAIMode('cloud'); });
+$('cloudProvider').addEventListener('change', function () {
+  var p = $('cloudProvider').value;
+  populateCloudModels(p, '');
+  cloudCfg.provider = p;
+  $('cloudBaseWrap').style.display = p === 'custom' ? '' : 'none';
+  saveCloudCfg();
+});
+$('cloudModel').addEventListener('change', saveCloudCfg);
+$('cloudModelCustom').addEventListener('input', saveCloudCfg);
+['cloudKey', 'cloudBase'].forEach(function (id) {
+  $(id).addEventListener('input', saveCloudCfg);
+});
+
+var cloudAbort = null;   // AbortController for the active cloud request
+function cloudEndpoint(cfg) {
+  switch (cfg.provider) {
+    case 'openai':    return { url: 'https://api.openai.com/v1/chat/completions', style: 'openai' };
+    case 'openrouter': return { url: 'https://openrouter.ai/api/v1/chat/completions', style: 'openai' };
+    case 'groq':      return { url: 'https://api.groq.com/openai/v1/chat/completions', style: 'openai' };
+    case 'opencodego': return { url: 'https://opencode.ai/zen/go/v1/chat/completions', style: 'openai' };
+    case 'anthropic': return { url: 'https://api.anthropic.com/v1/messages', style: 'anthropic' };
+    case 'gemini':    return {
+      url: 'https://generativelanguage.googleapis.com/v1beta/models/' +
+        encodeURIComponent(cfg.model) +
+        ':streamGenerateContent?alt=sse&key=' + encodeURIComponent(cfg.key),
+      style: 'gemini'
+    };
+    case 'custom': {
+      var base = String(cfg.base || '').replace(/\/+$/, '');
+      if (!base) return null;
+      return { url: /\/chat\/completions$/.test(base) ? base : base + '/chat/completions', style: 'openai' };
+    }
+  }
+  return null;
+}
+
+function runCloudLLM(userText) {
+  var prov = $('cloudProvider').value;
+  var cfg = {
+    provider: prov,
+    model: prov === 'custom' ? $('cloudModelCustom').value.trim() : $('cloudModel').value,
+    key: $('cloudKey').value,
+    base: $('cloudBase').value.trim()
+  };
+  if (!cfg.provider) { llmSetStatus('Pick a provider first.', 'error'); return; }
+  var ep = cloudEndpoint(cfg);
+  if (!ep) { llmSetStatus('Enter a base URL for the custom endpoint (or pick a provider).', 'error'); return; }
+  if (!cfg.model) { llmSetStatus('Enter a model name (e.g. gpt-4o-mini).', 'error'); return; }
+  if (!cfg.key && cfg.provider !== 'custom') { llmSetStatus('Enter your ' + cfg.provider + ' API key (saved only in this browser).', 'error'); return; }
+  if (cfg.provider === 'opencodego') {
+    llmSetStatus('OpenCode Go does not allow direct browser requests (no CORS headers on its API), so it cannot be used from a static page. Pick another provider.', 'error');
+    return;
+  }
+
+  var job = { id: ++llmJobSeq, model: cfg.model, device: 'cloud:' + cfg.provider, cloud: true };
+  llmCurrentJob = job;
+  llmBusy = true;
+  llmAbort = false;
+  llmTokens = 0;
+  llmMode = 'cloud';
+  updateLLMBtn();
+  $('llmCancel').disabled = false;
+  $('llmWrap').style.display = 'block';
+  $('llmOut').value = '';
+  $('llmProgressWrap').style.display = 'none';
+  llmSetStatus('Sending request to ' + cfg.provider + ' (' + cfg.model + ')...', '');
+  startLLMTimer();
+  cloudAbort = new AbortController();
+
+  var headers = { 'Content-Type': 'application/json' };
+  var body;
+  if (ep.style === 'anthropic') {
+    headers['x-api-key'] = cfg.key;
+    headers['anthropic-version'] = '2023-06-01';
+    headers['anthropic-dangerous-direct-browser-access'] = 'true';
+    body = { model: cfg.model, max_tokens: CLOUD_MAX_TOKENS, system: LLM_SYSTEM, messages: [{ role: 'user', content: userText }], stream: true };
+  } else if (ep.style === 'gemini') {
+    body = {
+      systemInstruction: { parts: [{ text: LLM_SYSTEM }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: { maxOutputTokens: CLOUD_MAX_TOKENS }
+    };
+  } else {
+    headers['Authorization'] = 'Bearer ' + cfg.key;
+    body = {
+      model: cfg.model,
+      messages: [{ role: 'system', content: LLM_SYSTEM }, { role: 'user', content: userText }],
+      max_tokens: CLOUD_MAX_TOKENS,
+      temperature: 0.3,
+      stream: true
+    };
+  }
+
+  fetch(ep.url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: cloudAbort.signal })
+    .then(function (res) {
+      if (!res.ok) {
+        return res.text().then(function (t) { throw new Error('HTTP ' + res.status + ': ' + String(t).slice(0, 300)); });
+      }
+      if (!res.body) throw new Error('Streaming is not supported in this browser.');
+      var reader = res.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+      function handleLine(line) {
+        line = String(line || '').trim();
+        if (line.indexOf('data:') !== 0) return;
+        var payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') return;
+        var evt;
+        try { evt = JSON.parse(payload); } catch (e2) { return; }
+        var txt = '';
+        if (ep.style === 'anthropic') {
+          if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) txt = evt.delta.text;
+        } else if (ep.style === 'gemini') {
+          var cand = evt.candidates && evt.candidates[0];
+          if (cand && cand.content && cand.content.parts) {
+            txt = cand.content.parts.map(function (p) { return p.text || ''; }).join('');
+          }
+        } else {
+          var ch = evt.choices && evt.choices[0];
+          if (ch && ch.delta && ch.delta.content) txt = ch.delta.content;
+        }
+        if (txt) appendLLMToken(job.id, txt);
+      }
+      function pump() {
+        return reader.read().then(function (r) {
+          if (r.done) return;
+          buffer += decoder.decode(r.value, { stream: true });
+          var parts = buffer.split('\n');
+          buffer = parts.pop();
+          for (var i = 0; i < parts.length; i++) handleLine(parts[i]);
+          return pump();
+        });
+      }
+      return pump();
+    })
+    .then(function () {
+      if (job.id !== llmJobSeq) return;
+      finishLLM(llmAbort ? 'cancelled' : 'done');
+    })
+    .catch(function (err) {
+      if (job.id !== llmJobSeq) return;
+      if (err && err.name === 'AbortError') { finishLLM('cancelled'); return; }
+      finishLLM('error');
+      var cloudMsg = (err && err.message) || err;
+      if (err && err.name === 'TypeError') {
+        cloudMsg = 'The provider blocked the browser request (CORS). It may not allow direct calls from a static page.';
+      }
+      llmSetStatus('Cloud AI request failed: ' + cloudMsg, 'error');
+    })
+    .then(function () { cloudAbort = null; });
+}
+
 function runLLM() {
   if (llmBusy) return;
   var transcript = $('transcriptOut').value.trim();
@@ -2149,8 +2456,32 @@ function runLLM() {
     llmSetStatus('Transcribe something first or load a transcript from Call History.', 'error');
     return;
   }
+  // Background compression: strip timestamps + merge same-speaker lines so the
+  // model gets fewer tokens. The visible transcript box is not modified.
+  var compacted = compactTranscript(transcript);
+  var savedChars = transcript.length - compacted.length;
+  if (savedChars > 64 || compacted !== transcript) {
+    if (savedChars > 0) {
+      llmSetStatus('Transcript compacted for AI (timestamps removed, same-speaker lines merged): saved ~' + savedChars + ' chars.', '');
+    }
+    transcript = compacted;
+  }
   var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
   var ref = $('llmRef').value.trim();
+  function buildUserText(tr) {
+    var ut = 'INSTRUCTIONS:\n' + prompt + '\n';
+    if (ref) {
+      ut += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' + ref + '\n';
+    }
+    ut += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\n' + tr;
+    return ut;
+  }
+
+  if (aiMode === 'cloud') {
+    runCloudLLM(buildUserText(transcript));
+    return;
+  }
+
   var model = $('llmModel').value;
   var maxTokens = 512;
   var gen = LLM_STYLES[$('llmStyle').value] || LLM_STYLES.precise;
@@ -2163,13 +2494,7 @@ function runLLM() {
       'For the full call, split it into shorter parts or use a model with a longer context. ...]';
     trimmed = true;
   }
-  var userText = 'INSTRUCTIONS:\n' + prompt + '\n';
-  if (ref) {
-    userText += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' +
-      ref + '\n';
-  }
-  userText += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\n' +
-    transcript;
+  var userText = buildUserText(transcript);
   var job = {
     id: ++llmJobSeq,
     model: model,
@@ -2200,7 +2525,6 @@ function runLLM() {
 }
 
 var _llmWasmFallback = false;   // set once GPU LLM execution fails; use CPU for the rest of the session
-var _llmSmokeDone = false;      // one WebGPU self-test per session
 
 function startLLMJob(job) {
   detectDevice().then(function (detected) {
@@ -2223,14 +2547,6 @@ function startLLMJob(job) {
       }
     }
     llmMode = 'worker';
-    if (device === 'webgpu' && !_llmSmokeDone) {
-      // One-time self-test: if this browser can't run the LLM on WebGPU,
-      // switch to CPU for the rest of the session instead of crashing.
-      _llmSmokeDone = true;
-      llmSetStatus('Verifying WebGPU can run this AI model...', '');
-      llmWorker.postMessage({ type: 'smoke', model: job.model, device: device, f16: _deviceF16 });
-      return;
-    }
     llmWorker.postMessage({
       type: 'generate', model: job.model, device: device, f16: _deviceF16,
       system: job.system, user: job.user, maxTokens: job.maxTokens, gen: job.gen
@@ -2283,15 +2599,6 @@ function onLLMMessage(e) {
   } else if (d.type === 'generating') {
     llmSetBar(100, 'Generating... 0 tokens');
     llmSetStatus('Model ready. Generating locally...', '');
-  } else if (d.type === 'smoke') {
-    if (d.ok && llmCurrentJob) {
-      llmSetStatus('WebGPU verified. Generating...', '');
-      startLLMJob(llmCurrentJob);
-    } else {
-      _llmWasmFallback = true;
-      llmSetStatus('This browser\'s WebGPU can\'t run this AI model reliably, so it will use CPU (WASM) mode. Slower, but fully functional.', '');
-      if (llmCurrentJob) startLLMJob(llmCurrentJob);
-    }
   } else if (d.type === 'token') {
     appendLLMToken(llmCurrentJob ? llmCurrentJob.id : -1, d.text);
   } else if (d.type === 'complete') {
@@ -2367,6 +2674,14 @@ function cancelLLM() {
   if (!llmBusy) return;
   if (llmMode === 'worker') {
     killLLMWorker();
+    finishLLM('cancelled');
+    return;
+  }
+  if (llmMode === 'cloud') {
+    llmAbort = true;
+    if (cloudAbort) {
+      try { cloudAbort.abort(); } catch (e) {}
+    }
     finishLLM('cancelled');
     return;
   }
@@ -2650,10 +2965,9 @@ $('historyClear').addEventListener('click', function () {
 });
 
 /* ---------- Init ---------- */
+applyCloudCfgToUI();
+setAIMode(aiMode);
 if (location.protocol.indexOf('http') === 0) {
-  var coi = document.createElement('script');
-  coi.src = 'coi-serviceworker.js';
-  document.head.appendChild(coi);
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function () {});
   }

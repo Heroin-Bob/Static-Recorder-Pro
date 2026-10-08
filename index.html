@@ -2144,8 +2144,11 @@ function runLLM() {
   startLLMJob(job);
 }
 
+var _llmWasmFallback = false;   // set once GPU LLM execution fails; use CPU for the rest of the session
+
 function startLLMJob(job) {
-  detectDevice().then(function (device) {
+  detectDevice().then(function (detected) {
+    var device = _llmWasmFallback ? 'wasm' : detected;
     job.device = device;
     var note = $('llmDeviceNote');
     if (note) note.textContent = llmDeviceNoteText(device);
@@ -2182,6 +2185,17 @@ function handleLLMError(message) {
     $('llmOut').value = '';
     llmSetBar(0, 'Retrying with smaller AI model...');
     llmSetStatus('Out of memory loading ' + shortModel(failed) + '. Retrying with ' + shortModel(job.model) + '...', '');
+    startLLMJob(job);
+    return true;
+  }
+  // GPU execution failure (e.g. driver/backend error) -> fall back to CPU for the session
+  if (job && job.device === 'webgpu' && !_llmWasmFallback && !LLM_OOM_RE.test(message)) {
+    _llmWasmFallback = true;
+    killLLMWorker();
+    llmTokens = 0;
+    $('llmOut').value = '';
+    llmSetBar(0, 'Retrying on CPU...');
+    llmSetStatus('WebGPU model execution failed. Retrying on CPU (WASM) mode...', '');
     startLLMJob(job);
     return true;
   }

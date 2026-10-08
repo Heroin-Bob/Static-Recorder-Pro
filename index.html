@@ -1980,33 +1980,47 @@ var LLMWorkerSrc = [
   '      var segOut = [];',
   '      for (var s = 0; s < segs.length; s++) {',
   '        self.postMessage({ type: "seg_progress", done: s + 1, total: segs.length });',
-  '        var r = await piped(',
-  '          [ { role: "system", content: SEG_SYS }, { role: "user", content: segs[s] } ],',
-  '          { max_new_tokens: 460, do_sample: false, repetition_penalty: 1.15 }',
-  '        );',
-  '        var txt = (r && r.generated_text) ? String(r.generated_text).trim() : "";',
-  '        if (txt) segOut.push(txt);',
+  '        try {',
+  '          var r = await piped(',
+  '            [ { role: "system", content: SEG_SYS }, { role: "user", content: segs[s] } ],',
+  '            { max_new_tokens: 360, do_sample: false, repetition_penalty: 1.15 }',
+  '          );',
+  '          var txt = (r && r.generated_text) ? String(r.generated_text).trim() : "";',
+  '          if (txt) segOut.push(txt);',
+  '          if (typeof console !== "undefined") console.log("[LLM] seg " + (s + 1) + "/" + segs.length, "in=" + segs[s].length, "out=" + txt.length);',
+  '        } catch (errSeg) {',
+  '          self.postMessage({ type: "error", message: "[LLM] segment " + (s + 1) + "/" + segs.length + " failed: " + String((errSeg && errSeg.message) || errSeg) });',
+  '          return;',
+  '        }',
   '      }',
-  '      var combined = segOut.join("\n\n");',
+  '      var combined = segOut.join("\\n\\n");',
+  '      if (combined.length > ' + 8000 + ')',
+  '        combined = combined.slice(0, ' + 8000 + ') + "\\n\\n[... combined summary was capped to fit the final pass ...]";',
   '      if (!combined) { self.postMessage({ type: "error", message: "No segment summaries produced." }); return; }',
   '      var finalUser = "INSTRUCTIONS:\\n" + (d.prompt || "") + "\\n";',
   '      if (d.ref) {',
   '        finalUser += "\\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\\n" + d.ref + "\\n";',
   '      }',
   '      finalUser += "\\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\\n" + combined;',
-  '      var streamer = new mod.TextStreamer(piped.tokenizer, {',
-  '        skip_prompt: true,',
-  '        skip_special_tokens: true,',
-  '        callback_function: function (text) { self.postMessage({ type: "token", text: text }); }',
-  '      });',
-  '      await piped(',
-  '        [ { role: "system", content: d.system }, { role: "user", content: finalUser } ],',
-  '        {',
-  '          max_new_tokens: d.maxTokens || 512,',
-  '          ...(d.gen || {}),',
-  '          streamer: streamer',
-  '        }',
-  '      );',
+  '      if (typeof console !== "undefined") console.log("[LLM] final pass", "in=" + finalUser.length);',
+  '      try {',
+  '        var streamer = new mod.TextStreamer(piped.tokenizer, {',
+  '          skip_prompt: true,',
+  '          skip_special_tokens: true,',
+  '          callback_function: function (text) { self.postMessage({ type: "token", text: text }); }',
+  '        });',
+  '        await piped(',
+  '          [ { role: "system", content: d.system }, { role: "user", content: finalUser } ],',
+  '          {',
+  '            max_new_tokens: d.maxTokens || 512,',
+  '            ...(d.gen || {}),',
+  '            streamer: streamer',
+  '          }',
+  '        );',
+  '      } catch (errFinal) {',
+  '        self.postMessage({ type: "error", message: "[LLM] final pass failed: " + String((errFinal && errFinal.message) || errFinal) });',
+  '        return;',
+  '      }',
   '      self.postMessage({ type: "complete" });',
   '      return;',
   '    }',
@@ -2084,7 +2098,8 @@ var LLM_CTX_TOKENS = {
    than this are split into segments and processed in batches on the GPU rather
    than trimmed or sent to slow CPU mode. */
 var WEBGPU_MAX_INPUT_CHARS = 24000;
-var LLM_SEGMENT_CHARS = 9000;   // ~2-3k tokens per segment, safely GPU-digestible
+var LLM_SEGMENT_CHARS = 4000;    // ~1k tokens per segment — each pass stays tiny for WebGPU
+var LLM_MAX_FINAL_CHARS = 8000;  // hard cap for the combined-summary final pass
 function splitTranscript(text, maxChars) {
   var lines = String(text || '').split('\n');
   var segs = [], cur = '';
@@ -2256,6 +2271,7 @@ function startLLMJob(job) {
     if (note) note.textContent = llmDeviceNoteText(device);
     var batched = device === 'webgpu' && job.segments && job.segments.length > 0;
     if (batched) {
+      if (window.console) console.log('[LLM] batching', job.segments.length, 'segments (chars each <= ' + LLM_SEGMENT_CHARS + ') on', device);
       llmSetStatus('Transcript is large — summarizing in ' + job.segments.length +
         ' parts on the GPU, then writing the final note.', '');
     }

@@ -564,6 +564,42 @@
     background: rgba(56, 189, 248, 0.12);
   }
 
+  /* Local AI info link + modal */
+  .localai-info-wrap { margin: -4px 0 10px; }
+  .localai-info-wrap a {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    text-decoration: underline dotted;
+    cursor: pointer;
+  }
+  .localai-info-wrap a:hover { color: var(--accent-cyan); }
+  .localai-modal { width: min(560px, 92vw) !important; }
+  .localai-content { font-size: 0.84rem; line-height: 1.5; }
+  .localai-content h4 {
+    margin: 14px 0 6px;
+    font-size: 0.9rem;
+    color: var(--accent-cyan);
+  }
+  .localai-content ul { margin: 4px 0 8px; padding-left: 20px; }
+  .localai-content li { margin: 3px 0; }
+  .localai-modal label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin: 14px 0 4px;
+  }
+  .localai-fix {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 0.82rem;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .localai-fix:empty { padding: 0; border: none; }
+
   /* Rich AI output (styled to match the textarea boxes) */
   .rich-out {
     white-space: pre-wrap;
@@ -915,6 +951,43 @@
           <div class="ai-mode-tabs">
             <button type="button" class="ai-mode-tab active" id="aiModeLocal" data-mode="local">Local (In-Browser)</button>
             <button type="button" class="ai-mode-tab" id="aiModeCloud" data-mode="cloud">Cloud API</button>
+          </div>
+
+          <div class="localai-info-wrap" id="aiLocalInfoWrap" style="display:none">
+            <a href="javascript:void(0)" id="aiLocalInfoLink">About local AI &mdash; what it's best for and its limits</a>
+          </div>
+
+          <div class="modal-overlay" id="localAiModal" style="display:none">
+            <div class="modal localai-modal">
+              <h3>Local AI (In-Browser)</h3>
+              <div class="localai-content">
+                <h4>What it does best</h4>
+                <ul>
+                  <li>Fast, private, free note generation on <strong>short-to-medium calls</strong> (up to roughly 25k chars / &asymp;15 min).</li>
+                  <li>Calls containing <strong>sensitive information</strong> that must never leave your device.</li>
+                  <li><strong>Offline use</strong> after the one-time model download.</li>
+                  <li>Quick summaries, action items, and follow-up drafts on typical support/customer calls.</li>
+                </ul>
+                <h4>Limitations</h4>
+                <ul>
+                  <li>Only small models fit in the browser (&le;1.5B); reasoning and formatting are noticeably weaker than cloud LLMs.</li>
+                  <li><strong>Memory ceiling:</strong> WebAssembly is 32-bit (&asymp;4&nbsp;GB heap cap). Long calls can hit "tensor too large" / out-of-memory errors; the app then retries with a smaller model or CPU.</li>
+                  <li><strong>Speed depends on the GPU:</strong> without WebGPU you get CPU ("WASM") mode, which is many times slower.</li>
+                  <li>Keep transcripts compacted/trimmed &mdash; the app auto-compresses them (~45%), which helps a lot.</li>
+                </ul>
+              </div>
+              <label for="localAiFixSelect">Need your AI off CPU mode? Pick a topic:</label>
+              <select id="localAiFixSelect">
+                <option value="">Choose a topic to see the fix...</option>
+                <option value="gpu">AI is stuck on CPU / WASM mode &mdash; won't use the GPU</option>
+                <option value="slow">Local AI works but is slow</option>
+                <option value="oom">Out of memory or crashes on long calls</option>
+              </select>
+              <div class="localai-fix" id="localAiFixDetail"></div>
+              <div class="modal-actions">
+                <button type="button" class="btn" id="localAiClose">Close</button>
+              </div>
+            </div>
           </div>
 
           <div id="aiLocalPanel">
@@ -2393,14 +2466,56 @@ function setAIMode(mode) {
   $('aiModeCloud').classList.toggle('active', aiMode === 'cloud');
   $('aiLocalPanel').style.display = aiMode === 'local' ? '' : 'none';
   $('aiCloudPanel').style.display = aiMode === 'cloud' ? '' : 'none';
+  $('aiLocalInfoWrap').style.display = aiMode === 'local' ? '' : 'none';
   var note = $('llmDeviceNote');
   if (note) {
     if (aiMode === 'cloud') note.textContent = 'Cloud API Mode';
     else detectDevice().then(function (device) { note.textContent = llmDeviceNoteText(device); });
   }
+  if (aiMode !== 'local') { $('localAiModal').style.display = 'none'; }
 }
 $('aiModeLocal').addEventListener('click', function () { setAIMode('local'); });
 $('aiModeCloud').addEventListener('click', function () { setAIMode('cloud'); });
+
+/* "About local AI" popup: limits, best use, and CPU-mode fixes */
+var LOCAL_AI_FIXES = {
+  gpu: '1. Use Chrome or Edge (Firefox/Safari cannot expose a working WebGPU for this app).\n' +
+       '2. Open chrome://flags/#enable-vulkan and set Vulkan to Enabled.\n' +
+       '3. (Linux/older setups) also enable chrome://flags/#enable-unsafe-webgpu and\n' +
+       '   chrome://flags/#ignore-gpu-blocklist.\n' +
+       '4. Make sure hardware acceleration is on: Settings > System >\n' +
+       '   "Use graphics acceleration when available."\n' +
+       '5. Restart Chrome, then reload this page.\n' +
+       'The badge in the top-right should change from "WASM CPU Mode" to "WebGPU Active".',
+  slow: '1. Confirm you are on WebGPU (see the "AI is stuck on CPU" topic above) —\n' +
+        '   CPU mode is several times slower.\n' +
+        '2. Pick the smallest model, SmolLM2 135M, for the quickest runs.\n' +
+        '3. Use the Precise generation style (no sampling = fewer tokens wasted).\n' +
+        '4. Rely on the automatic transcript compaction, and manually trim very\n' +
+        '   long calls — less input = faster generation.\n' +
+        '5. If speed still matters more than privacy, Cloud API mode is much faster.',
+  oom: '1. Local models live inside a ~4 GB (32-bit WASM) memory limit, so very\n' +
+       '   long calls can fail with "tensor too large" / out-of-memory errors.\n' +
+       '2. The app already retries with a smaller model and falls back to CPU —\n' +
+       '   expect it to be slower for the rest of that run.\n' +
+       '3. Reload the page to free memory from previous AI runs and close other\n' +
+       '   heavy tabs.\n' +
+       '4. Keep transcripts compacted/trimmed (auto-compaction saves ~45%).\n' +
+       '5. For calls longer than ~25k chars of transcript, use Cloud API mode —\n' +
+       '   it has no browser memory ceiling and handles the full call.'
+};
+$('aiLocalInfoLink').addEventListener('click', function () {
+  $('localAiFixSelect').value = '';
+  $('localAiFixDetail').textContent = '';
+  $('localAiModal').style.display = 'flex';
+});
+$('localAiClose').addEventListener('click', function () { $('localAiModal').style.display = 'none'; });
+$('localAiModal').addEventListener('click', function (e) {
+  if (e.target === $('localAiModal')) $('localAiModal').style.display = 'none';
+});
+$('localAiFixSelect').addEventListener('change', function () {
+  $('localAiFixDetail').textContent = LOCAL_AI_FIXES[this.value] || '';
+});
 $('cloudProvider').addEventListener('change', function () {
   var p = $('cloudProvider').value;
   populateCloudModels(p, '');

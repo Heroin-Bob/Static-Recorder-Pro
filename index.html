@@ -564,6 +564,80 @@
     background: rgba(56, 189, 248, 0.12);
   }
 
+  /* Record mode toggle */
+  .rec-mode {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 14px 0;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .rec-mode-label { font-weight: 500; }
+  .rec-mode-text { color: var(--text-main); }
+  .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: 24px;
+    transition: all 0.2s ease;
+  }
+  .slider:before {
+    content: "";
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    top: 3px;
+    background: #94a3b8;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+  }
+  .switch input:checked + .slider {
+    background: rgba(56, 189, 248, 0.25);
+    border-color: var(--accent-cyan);
+  }
+  .switch input:checked + .slider:before {
+    transform: translateX(20px);
+    background: var(--accent-cyan);
+  }
+
+  /* Drag-and-drop upload zone */
+  .upload-drop {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 26px 16px;
+    border: 1.5px dashed rgba(56, 189, 248, 0.35);
+    border-radius: 12px;
+    background: rgba(9, 13, 22, 0.6);
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.18s ease;
+    outline: none;
+  }
+  .upload-drop:hover,
+  .upload-drop:focus-visible {
+    border-color: var(--accent-cyan);
+    background: rgba(56, 189, 248, 0.06);
+  }
+  .upload-drop.dragover {
+    border-color: var(--accent-cyan);
+    border-style: solid;
+    background: rgba(56, 189, 248, 0.12);
+    transform: scale(1.01);
+  }
+  .upload-drop-icon { color: var(--accent-cyan); opacity: 0.9; }
+  .upload-drop-text { color: var(--text-main); font-size: 0.9rem; }
+  .upload-drop-text b { color: var(--accent-cyan); font-weight: 600; }
+  .upload-drop-hint { color: var(--text-muted); font-size: 0.75rem; }
+
   /* Local AI info link + modal */
   .localai-info-wrap { margin: -4px 0 10px; }
   .localai-info-wrap a {
@@ -834,10 +908,16 @@
           <div class="card-header">
             <div class="card-title">
               <svg viewBox="0 0 24 24"><path d="M12 15c1.66 0 2.99-1.34 2.99-3L15 5c0-1.66-1.34-3-3-3S9 3.34 9 5v7c0 1.66 1.34 3 3 3zm5.3-3c0 3-2.54 5.1-5.3 5.1S6.7 15 6.7 12H5c0 3.41 2.72 6.23 6 6.72V22h2v-3.28c3.28-.48 6-3.3 6-6.72h-1.7z"/></svg>
-              Dual-Track Recorder
+              Audio Source
             </div>
           </div>
-          
+
+          <div class="ai-mode-tabs">
+            <button type="button" class="ai-mode-tab active" id="recTabRecorder" data-mode="recorder">Recorder</button>
+            <button type="button" class="ai-mode-tab" id="recTabUpload" data-mode="upload">Upload</button>
+          </div>
+
+          <div id="recPanel">
           <div class="card-desc">
             Captures <b>Mic (Agent)</b> &amp; <b>System Audio (Caller)</b> as separate tracks. Ensure "Share system audio" is enabled when selecting the tab/window.
           </div>
@@ -849,12 +929,21 @@
             <span class="elapsed" id="recElapsed">0s</span>
           </div>
 
+<div class="rec-mode">
+            <span class="rec-mode-label">Record mode</span>
+            <label class="switch" title="Track the system audio as a separate Caller track">
+              <input type="checkbox" id="twoTrackToggle" checked>
+              <span class="slider"></span>
+            </label>
+            <span class="rec-mode-text" id="recModeLabel">2-Track (Mic + System)</span>
+          </div>
+
           <div class="meters">
             <div class="meter-row">
               <div class="meter-label"><span>Agent (Microphone)</span><span id="recInPct">0%</span></div>
               <canvas class="meter-canvas" id="recWaveIn"></canvas>
             </div>
-            <div class="meter-row">
+            <div class="meter-row" id="recMeterOutRow">
               <div class="meter-label"><span>Caller (System Audio)</span><span id="recOutPct">0%</span></div>
               <canvas class="meter-canvas" id="recWaveOut"></canvas>
             </div>
@@ -870,6 +959,28 @@
           <div id="recAfter" style="display:none; margin-top: 14px;">
             <div id="recFiles"></div>
             <div class="hint" id="recSavedNote" style="display:none; margin-top: 8px;">Saved locally in IndexedDB storage.</div>
+          </div>
+          </div>
+
+          <div id="uploadPanel" style="display:none">
+            <div class="card-desc">
+              Transcribe recordings you already have (mp3, m4a, wav, ogg, webm, flac, ...). Select one or more files, then run them through the same transcription and AI note process.
+            </div>
+            <div class="form-group">
+              <label>Choose audio files</label>
+              <div class="upload-drop" id="uploadDrop" tabindex="0" role="button" aria-label="Upload audio files">
+                <input type="file" id="uploadFiles" accept="audio/*,.mp3,.m4a,.wav,.ogg,.webm,.flac,.aac,.opus,.amr,.wma" multiple hidden>
+                <svg class="upload-drop-icon" viewBox="0 0 24 24" width="34" height="34"><path fill="currentColor" d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                <div class="upload-drop-text"><b>Click to choose files</b> or drag &amp; drop them here</div>
+                <div class="upload-drop-hint">mp3 &bull; m4a &bull; wav &bull; ogg &bull; webm &bull; flac &bull; more &mdash; select one or multiple</div>
+              </div>
+              <div class="hint">Each file becomes its own track in the transcript (labeled by file name).</div>
+            </div>
+            <div id="uploadList"></div>
+            <div class="rec-btns" style="margin-top: 10px;">
+              <button type="button" id="uploadTranscribeBtn" class="btn-green" disabled>Transcribe Uploaded Files</button>
+            </div>
+            <div id="uploadStatus"></div>
           </div>
         </div>
 
@@ -1370,16 +1481,20 @@ var Recorder = (function () {
   var micChunks = [], outChunks = [], recording = false, startT = 0;
   var micWriter = null, outWriter = null, micFileHandle = null, outFileHandle = null;
 
+  function twoTrack() { return !$('twoTrackToggle') || $('twoTrackToggle').checked; }
+
   function initOPFS() {
     if (!navigator.storage || !navigator.storage.getDirectory) return Promise.resolve(false);
     return navigator.storage.getDirectory().then(function(dir) {
-      return Promise.all([
-        dir.getFileHandle('mic.webm', {create: true}),
-        dir.getFileHandle('out.webm', {create: true})
-      ]).then(function(handles) {
+      var micP = dir.getFileHandle('mic.webm', {create: true});
+      var outP = twoTrack() ? dir.getFileHandle('out.webm', {create: true}) : Promise.resolve(null);
+      return Promise.all([micP, outP]).then(function(handles) {
         micFileHandle = handles[0];
         outFileHandle = handles[1];
-        return Promise.all([micFileHandle.createWritable(), outFileHandle.createWritable()]);
+        return Promise.all([
+          micFileHandle.createWritable(),
+          outFileHandle ? outFileHandle.createWritable() : Promise.resolve(null)
+        ]);
       }).then(function(writers) {
         micWriter = writers[0];
         outWriter = writers[1];
@@ -1421,7 +1536,7 @@ var Recorder = (function () {
   function meterLoop() {
     if (!recording) return;
     drawWave(analysers.in, $('recWaveIn'), '#22c55e', $('recInPct'));
-    drawWave(analysers.out, $('recWaveOut'), '#a855f7', $('recOutPct'));
+    if (analysers.out) drawWave(analysers.out, $('recWaveOut'), '#a855f7', $('recOutPct'));
     meterRaf = requestAnimationFrame(meterLoop);
   }
   function stopTracks() {
@@ -1449,22 +1564,24 @@ var Recorder = (function () {
       audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     }).then(function (m) {
       mic = m;
+      if (!twoTrack()) return null;
       return navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
     }).then(function (o) {
-      out = o;
-      if (!out.getAudioTracks()[0]) {
-        stopTracks();
-        onStatus('No audio selected for system output. Share the call tab/window and include system audio.', 'error');
-        reset();
-        return;
+      if (o) {
+        out = o;
+        if (!out.getAudioTracks()[0]) {
+          stopTracks();
+          onStatus('No audio selected for system output. Share the call tab/window and include system audio.', 'error');
+          reset();
+          return;
+        }
       }
+      var solo = !twoTrack();
       actx = new (window.AudioContext || window.webkitAudioContext)();
-      analysers = {
-        in: new AnalyserNode(actx, { fftSize: 1024 }),
-        out: new AnalyserNode(actx, { fftSize: 1024 })
-      };
+      analysers = { in: new AnalyserNode(actx, { fftSize: 1024 }), out: null };
+      if (out) analysers.out = new AnalyserNode(actx, { fftSize: 1024 });
       actx.createMediaStreamSource(mic).connect(analysers.in);
-      actx.createMediaStreamSource(new MediaStream([out.getAudioTracks()[0]])).connect(analysers.out);
+      if (out) actx.createMediaStreamSource(new MediaStream([out.getAudioTracks()[0]])).connect(analysers.out);
       actx.resume();
 
       recording = true;
@@ -1473,24 +1590,27 @@ var Recorder = (function () {
       var mime = pickMime();
       var opts = mime ? { mimeType: mime } : undefined;
       micRec = new MediaRecorder(new MediaStream([mic.getAudioTracks()[0]]), opts);
-      outRec = new MediaRecorder(new MediaStream([out.getAudioTracks()[0]]), opts);
-      
+      outRec = out ? new MediaRecorder(new MediaStream([out.getAudioTracks()[0]]), opts) : null;
+
       initOPFS().then(function() {
         micRec.ondataavailable = function (e) {
           if (!e.data.size) return;
           if (micWriter) micWriter.write(e.data); else micChunks.push(e.data);
         };
-        outRec.ondataavailable = function (e) {
-          if (!e.data.size) return;
-          if (outWriter) outWriter.write(e.data); else outChunks.push(e.data);
-        };
-        micRec.start(); outRec.start();
-  
+        if (outRec) {
+          outRec.ondataavailable = function (e) {
+            if (!e.data.size) return;
+            if (outWriter) outWriter.write(e.data); else outChunks.push(e.data);
+          };
+        }
+        micRec.start();
+        if (outRec) outRec.start();
+
         startT = Date.now();
         clearInterval(timer);
         timer = setInterval(function () { $('recElapsed').textContent = Math.floor((Date.now() - startT) / 1000) + 's'; }, 250);
         $('recInd').style.display = 'flex';
-        onStatus('Recording active. Speak now.', 'ok');
+        onStatus(solo ? 'Recording active (mic only). Speak now.' : 'Recording active. Speak now.', 'ok');
       });
     }).catch(function (e) {
       stopTracks();
@@ -1516,11 +1636,14 @@ var Recorder = (function () {
     $('recInPct').textContent = '0%'; $('recOutPct').textContent = '0%';
     reset();
     onStatus('Finalizing recorded audio...');
-    if (!micRec || !outRec) { reset(); return; }
+    if (!micRec || (twoTrack() && !outRec)) { reset(); return; }
 
     var wait = function (r) { return new Promise(function (res) { r.addEventListener('stop', res, { once: true }); }); };
-    micRec.stop(); outRec.stop();
-    Promise.all([wait(micRec), wait(outRec)]).then(function () {
+    micRec.stop();
+    if (outRec) outRec.stop();
+    var waits = [wait(micRec)];
+    if (outRec) waits.push(wait(outRec));
+    Promise.all(waits).then(function () {
       stopTracks();
       if (actx && actx.close) actx.close();
       actx = null; analysers = null;
@@ -1911,6 +2034,127 @@ $('recStart').addEventListener('click', function () {
 });
 $('recStop').addEventListener('click', function () { Recorder.stop(); });
 
+/* Record mode toggle (2-track vs mic-only) */
+function syncRecMode() {
+  var two = $('twoTrackToggle').checked;
+  $('recModeLabel').textContent = two ? '2-Track (Mic + System)' : 'Input Only (Mic)';
+  $('recMeterOutRow').style.display = two ? '' : 'none';
+}
+$('twoTrackToggle').addEventListener('change', syncRecMode);
+
+/* ---------- Recorder / Upload tabs ---------- */
+var recTab = 'recorder';
+function setRecTab(mode) {
+  recTab = mode === 'upload' ? 'upload' : 'recorder';
+  $('recTabRecorder').classList.toggle('active', recTab === 'recorder');
+  $('recTabUpload').classList.toggle('active', recTab === 'upload');
+  $('recPanel').style.display = recTab === 'recorder' ? '' : 'none';
+  $('uploadPanel').style.display = recTab === 'upload' ? '' : 'none';
+}
+$('recTabRecorder').addEventListener('click', function () { setRecTab('recorder'); });
+$('recTabUpload').addEventListener('click', function () { setRecTab('upload'); });
+
+/* ---------- Upload existing recordings ---------- */
+var uploadFiles = [];
+var uploadSeq = 0;
+function renderUploadList() {
+  var list = $('uploadList');
+  list.innerHTML = '';
+  uploadFiles.forEach(function (f, idx) {
+    var d = document.createElement('div');
+    d.className = 'file-item';
+    var n = document.createElement('span');
+    n.className = 'fname';
+    n.textContent = f.name;
+    var sz = document.createElement('span');
+    sz.className = 'fsize';
+    sz.textContent = (f.size / 1048576).toFixed(2) + ' MB';
+    var c = document.createElement('span');
+    c.className = 'fcontrols';
+    var rm = document.createElement('button');
+    rm.className = 'mini red';
+    rm.textContent = 'Remove';
+    rm.onclick = function () {
+      uploadFiles.splice(idx, 1);
+      $('uploadFiles').value = '';
+      renderUploadList();
+      $('uploadTranscribeBtn').disabled = uploadFiles.length === 0;
+    };
+    c.appendChild(rm);
+    d.appendChild(n); d.appendChild(sz); d.appendChild(c);
+    list.appendChild(d);
+  });
+  $('uploadTranscribeBtn').disabled = uploadFiles.length === 0;
+}
+$('uploadDrop').addEventListener('click', function () { $('uploadFiles').click(); });
+$('uploadDrop').addEventListener('keydown', function (e) {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('uploadFiles').click(); }
+});
+['dragenter', 'dragover'].forEach(function (ev) {
+  $('uploadDrop').addEventListener(ev, function (e) {
+    e.preventDefault();
+    $('uploadDrop').classList.add('dragover');
+  });
+});
+['dragleave', 'dragend', 'drop'].forEach(function (ev) {
+  $('uploadDrop').addEventListener(ev, function (e) {
+    e.preventDefault();
+    $('uploadDrop').classList.remove('dragover');
+  });
+});
+$('uploadDrop').addEventListener('drop', function (e) {
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) {
+    uploadFiles = Array.prototype.slice.call(e.dataTransfer.files);
+    renderUploadList();
+    $('uploadFiles').value = '';
+  }
+});
+$('uploadFiles').addEventListener('change', function () {
+  if (this.files && this.files.length) {
+    uploadFiles = Array.prototype.slice.call(this.files);
+    renderUploadList();
+  }
+});
+function shortTrackLabel(name) {
+  var base = String(name || '').replace(/\.[^.]+$/, '').trim();
+  if (base.length > 28) base = base.slice(0, 25) + '...';
+  return base || 'Track';
+}
+$('uploadTranscribeBtn').addEventListener('click', function () {
+  if (!uploadFiles.length) return;
+  var jobId = ++uploadSeq;
+  $('uploadTranscribeBtn').disabled = true;
+  $('uploadStatus').textContent = '';
+  var files = uploadFiles.slice();
+  var rec = { id: uid(), ts: Date.now(), duration: 0, uploads: [] };
+  var chain = Promise.resolve();
+  files.forEach(function (f) {
+    chain = chain.then(function () {
+      if (jobId !== uploadSeq) return;
+      setStatus('Preparing "' + f.name + '"...', '');
+      return blobToWav16k(f).then(function (wav) {
+        if (jobId !== uploadSeq) return;
+        rec.uploads.push({ name: f.name, blob: wav });
+        rec.duration += wavDurationSeconds(wav);
+      });
+    });
+  });
+  chain.then(function () {
+    if (jobId !== uploadSeq) return;
+    if (!rec.uploads.length) { $('uploadTranscribeBtn').disabled = false; return; }
+    return Store.saveRecording(rec).then(function () {
+      latestRecordingId = rec.id;
+      $('transcribeBtn').disabled = false;
+      renderHistory();
+      runTranscription(rec);
+    });
+  }).catch(function () {
+    if (jobId !== uploadSeq) return;
+    $('uploadTranscribeBtn').disabled = false;
+    setStatus('Could not decode one of the uploaded files. Try Chrome/Edge (mp3/m4a/wav/ogg/webm/flac).', 'error');
+  });
+});
+
 /* ---------- Transcription flow ---------- */
 var _devicePromise = null;
 var _deviceLabel = '';
@@ -2004,8 +2248,14 @@ function runTranscription(rec) {
   var device = 'wasm';
   var model = $('model').value;
   var tasks = [];
-  if (rec.tracks && rec.tracks.input) tasks.push({ label: 'Agent', audio: null, blob: rec.tracks.input.blob });
-  if (rec.tracks && rec.tracks.output) tasks.push({ label: 'Caller', audio: null, blob: rec.tracks.output.blob });
+  if (rec.uploads && rec.uploads.length) {
+    rec.uploads.forEach(function (u) {
+      tasks.push({ label: shortTrackLabel(u.name), audio: null, blob: u.blob });
+    });
+  } else {
+    if (rec.tracks && rec.tracks.input) tasks.push({ label: 'Agent', audio: null, blob: rec.tracks.input.blob });
+    if (rec.tracks && rec.tracks.output) tasks.push({ label: 'Caller', audio: null, blob: rec.tracks.output.blob });
+  }
   if (!tasks.length) { finishError('This recording has no audio.'); return; }
 
   var overall = 0;
@@ -3175,8 +3425,14 @@ function renderHistItem(rec, transcript) {
 
   var parts = [];
   if (rec.duration) parts.push(fmtDur(rec.duration));
-  if (rec.tracks && rec.tracks.input) parts.push('Agent ' + (rec.tracks.input.blob.size / 1048576).toFixed(2) + ' MB');
-  if (rec.tracks && rec.tracks.output) parts.push('Caller ' + (rec.tracks.output.blob.size / 1048576).toFixed(2) + ' MB');
+  if (rec.uploads && rec.uploads.length) {
+    rec.uploads.forEach(function (u) {
+      parts.push(shortTrackLabel(u.name) + ' (' + (u.blob.size / 1048576).toFixed(2) + ' MB)');
+    });
+  } else {
+    if (rec.tracks && rec.tracks.input) parts.push('Agent ' + (rec.tracks.input.blob.size / 1048576).toFixed(2) + ' MB');
+    if (rec.tracks && rec.tracks.output) parts.push('Caller ' + (rec.tracks.output.blob.size / 1048576).toFixed(2) + ' MB');
+  }
   var meta = document.createElement('div');
   meta.className = 'hist-meta';
   meta.textContent = parts.join(' · ');
@@ -3184,11 +3440,19 @@ function renderHistItem(rec, transcript) {
 
   var actions = document.createElement('div');
   actions.className = 'hist-actions';
-  if (rec.tracks && rec.tracks.input) {
-    actions.appendChild(mkHistBtn('Save Agent (.wav)', '', function () { downloadBlob(rec.tracks.input.blob, rec.tracks.input.name); }));
-  }
-  if (rec.tracks && rec.tracks.output) {
-    actions.appendChild(mkHistBtn('Save Caller (.wav)', '', function () { downloadBlob(rec.tracks.output.blob, rec.tracks.output.name); }));
+  if (rec.uploads && rec.uploads.length) {
+    rec.uploads.forEach(function (u) {
+      actions.appendChild(mkHistBtn('Save "' + shortTrackLabel(u.name) + '" (.wav)', '', function () {
+        downloadBlob(u.blob, shortTrackLabel(u.name) + '.wav');
+      }));
+    });
+  } else {
+    if (rec.tracks && rec.tracks.input) {
+      actions.appendChild(mkHistBtn('Save Agent (.wav)', '', function () { downloadBlob(rec.tracks.input.blob, rec.tracks.input.name); }));
+    }
+    if (rec.tracks && rec.tracks.output) {
+      actions.appendChild(mkHistBtn('Save Caller (.wav)', '', function () { downloadBlob(rec.tracks.output.blob, rec.tracks.output.name); }));
+    }
   }
   actions.appendChild(mkHistBtn('Transcribe Audio', 'green', function () {
     latestRecordingId = rec.id;
@@ -3241,6 +3505,7 @@ $('historyClear').addEventListener('click', function () {
 /* ---------- Init ---------- */
 applyCloudCfgToUI();
 setAIMode(aiMode);
+syncRecMode();
 if (location.protocol.indexOf('http') === 0) {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('sw.js').catch(function () {});

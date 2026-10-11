@@ -999,8 +999,11 @@
               <option value="onnx-community/whisper-tiny.en">Tiny (Fastest, ~40 MB)</option>
               <option value="onnx-community/whisper-base.en" selected>Base (Balanced, ~40-90 MB)</option>
               <option value="onnx-community/whisper-small.en">Small (High Accuracy, ~150-230 MB)</option>
+              <option value="onnx-community/whisper-medium.en">Medium (Higher Accuracy, ~700-1500 MB)</option>
+              <option value="onnx-community/whisper-large-v3-turbo">Large Turbo (Best Accuracy, ~1.5 GB)</option>
+              <option value="onnx-community/whisper-large-v3">Large v3 (Max Accuracy, ~2.9 GB)</option>
             </select>
-            <div class="hint">Model downloads once to browser cache. No API key or server required.</div>
+            <div class="hint">Model downloads once to browser cache. No API key or server required. Larger models are more accurate but slower and use more memory.</div>
           </div>
 
           <div class="rec-btns" style="margin-top: 14px;">
@@ -1770,6 +1773,10 @@ var ASRWorkerSrc = [
   '        var segStart = bounds.start, segLen = bounds.end - bounds.start;',
   '        var out = await piped(audio.subarray(segStart, bounds.end), {',
   '          return_timestamps: true,',
+  '          condition_on_previous_text: false,',
+  '          no_speech_threshold: 0.45,',
+  '          logprob_threshold: -0.7,',
+  '          repetition_penalty: 1.12,',
   '          chunk_callback: function (chunk) {',
   '            var ct = String(chunk.text || "").trim();',
   '            if (ct) self.postMessage({ type: "partial", track: t, text: ct });',
@@ -1861,7 +1868,13 @@ function mainTrack(piped, track, tIdx, tTotal, emit) {
           return;
         }
         var segStart = bounds.start, segLen = bounds.end - bounds.start;
-        return piped(audio.subarray(segStart, bounds.end), { return_timestamps: true }).then(function (out) {
+        return piped(audio.subarray(segStart, bounds.end), {
+          return_timestamps: true,
+          condition_on_previous_text: false,
+          no_speech_threshold: 0.45,
+          logprob_threshold: -0.7,
+          repetition_penalty: 1.12
+        }).then(function (out) {
           var chunks = (out && out.chunks) || [];
           for (var c = 0; c < chunks.length; c++) {
             var text = String(chunks[c].text || '').trim();

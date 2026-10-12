@@ -639,14 +639,16 @@
   .upload-drop-hint { color: var(--text-muted); font-size: 0.75rem; }
 
   /* Local AI info link + modal */
-  .localai-info-wrap { margin: -4px 0 10px; }
-  .localai-info-wrap a {
+  .localai-info-wrap, .cloud-info-wrap { margin: -4px 0 10px; }
+  .localai-info-wrap a, .cloud-info-wrap a {
     color: var(--text-muted);
     font-size: 0.78rem;
     text-decoration: underline dotted;
     cursor: pointer;
   }
-  .localai-info-wrap a:hover { color: var(--accent-cyan); }
+  .localai-info-wrap a:hover, .cloud-info-wrap a:hover { color: var(--accent-cyan); }
+  .cloud-info-wrap ol { margin: 4px 0 8px; padding-left: 20px; }
+  .cloud-info-wrap li { margin: 3px 0; }
   .localai-modal { width: min(560px, 92vw) !important; }
   .localai-content { font-size: 0.84rem; line-height: 1.5; }
   .localai-content h4 {
@@ -1104,6 +1106,35 @@
             </div>
           </div>
 
+          <div class="modal-overlay" id="cloudInfoModal" style="display:none">
+            <div class="modal localai-modal">
+              <h3>Cloud API &mdash; Privacy &amp; Free Key</h3>
+              <div class="localai-content">
+                <h4>What gets sent, and where</h4>
+                <ul>
+                  <li>Cloud mode sends your <strong>transcript, prompt instruction, and format reference</strong> to the provider you select (OpenAI, Google, Anthropic, etc.).</li>
+                  <li>Requests go <strong>directly from your browser</strong> to that provider &mdash; nothing passes through this site or any other middleman.</li>
+                  <li>Your <strong>API key is stored only in this browser</strong> (local storage) and is sent only to the provider you configure.</li>
+                  <li>Local (In-Browser) mode remains the fully private option &mdash; nothing ever leaves your device there.</li>
+                </ul>
+
+                <h4>Want a free API key? (Google Gemini)</h4>
+                <ol>
+                  <li>Go to <strong>aistudio.google.com/api-keys</strong> and sign in with a Google account.</li>
+                  <li>Click <strong>Create API Key</strong> and name it <strong>StaticRecorderPro</strong>.</li>
+                  <li><strong>Copy the key somewhere safe</strong> (a password manager or note) &mdash; you may not be able to view it again later.</li>
+                  <li>Come back here, choose <strong>Google Gemini</strong> as the provider.</li>
+                  <li>Set the model to <strong>gemini-3.1-flash-lite</strong> &mdash; it works very well for this purpose and gets the most tokens because it's an older model in the family.</li>
+                  <li>Paste your copied key into the <strong>API Key</strong> field, then press <strong>Generate with AI</strong>.</li>
+                </ol>
+                <p><em>Tip: Gemini's free tier has generous limits, so it's the easiest way to try Cloud mode without paying. If you run out of tokens, switch to Local mode or use the Copy Prompt button to paste into any AI chat you already have.</em></p>
+              </div>
+              <div class="modal-actions">
+                <button type="button" class="btn" id="cloudInfoClose">Close</button>
+              </div>
+            </div>
+          </div>
+
           <div id="aiLocalPanel">
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
             <div class="form-group">
@@ -1128,6 +1159,9 @@
           </div>
 
           <div id="aiCloudPanel" style="display:none">
+            <div class="cloud-info-wrap">
+              <a href="javascript:void(0)" id="cloudInfoLink">Heads-up: cloud mode sends your transcript &amp; prompt to the provider. &mdash; Need a free API key?</a>
+            </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
               <div class="form-group">
                 <label for="cloudProvider">Provider</label>
@@ -1137,7 +1171,6 @@
                   <option value="gemini">Google Gemini</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="groq">Groq</option>
-                  <option value="opencodego">OpenCode Go</option>
                   <option value="custom">Custom (OpenAI-compatible)</option>
                 </select>
               </div>
@@ -1208,6 +1241,7 @@
           <div class="rec-btns" style="margin-top:14px">
             <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
             <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
+            <button type="button" id="copyPromptBtn" class="btn" disabled title="Copy the exact prompt sent to the AI (instructions + reference + transcript)">Copy Prompt</button>
           </div>
 
           <div class="progress-wrap" id="llmProgressWrap" style="display:none">
@@ -2470,6 +2504,7 @@ var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
 var llmBusy = false, llmMode = null, llmAbort = false;
 var llmTokens = 0, llmStartTs = 0, llmTimer = null;
 var llmCurrentJob = null, llmJobSeq = 0;
+var lastSentPrompt = '';   // exact user message last sent to the AI (for Copy Prompt)
 var llmUserPickedModel = false;
 
 function llmDeviceNoteText(device) {
@@ -2675,7 +2710,6 @@ var CLOUD_MODELS = {
   gemini: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
   openrouter: ['openai/gpt-4o-mini', 'openai/gpt-4o', 'anthropic/claude-sonnet-4-5', 'anthropic/claude-3.7-sonnet', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct', 'mistralai/mistral-large-latest'],
   groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen-2.5-32b'],
-  opencodego: ['glm-5.3-flash', 'glm-5.3', 'glm-5.2', 'kimi-k3', 'kimi-k2.7-code', 'deepseek-v4-pro', 'deepseek-v4-flash', 'deepseek-v4.1-flash', 'mimo-v2.6-pro', 'longcat-2.0', 'hy4-preview'],
   custom: [],
 };
 var CLOUD_MAX_TOKENS = 1024;
@@ -2779,6 +2813,15 @@ $('localAiModal').addEventListener('click', function (e) {
 $('localAiFixSelect').addEventListener('change', function () {
   $('localAiFixDetail').textContent = LOCAL_AI_FIXES[this.value] || '';
 });
+
+/* Cloud API privacy + free-key info popup */
+$('cloudInfoLink').addEventListener('click', function () {
+  $('cloudInfoModal').style.display = 'flex';
+});
+$('cloudInfoClose').addEventListener('click', function () { $('cloudInfoModal').style.display = 'none'; });
+$('cloudInfoModal').addEventListener('click', function (e) {
+  if (e.target === $('cloudInfoModal')) $('cloudInfoModal').style.display = 'none';
+});
 $('cloudProvider').addEventListener('change', function () {
   var p = $('cloudProvider').value;
   populateCloudModels(p, '');
@@ -2798,7 +2841,6 @@ function cloudEndpoint(cfg) {
     case 'openai':    return { url: 'https://api.openai.com/v1/chat/completions', style: 'openai' };
     case 'openrouter': return { url: 'https://openrouter.ai/api/v1/chat/completions', style: 'openai' };
     case 'groq':      return { url: 'https://api.groq.com/openai/v1/chat/completions', style: 'openai' };
-    case 'opencodego': return { url: 'https://opencode.ai/zen/go/v1/chat/completions', style: 'openai' };
     case 'anthropic': return { url: 'https://api.anthropic.com/v1/messages', style: 'anthropic' };
     case 'gemini':    return {
       url: 'https://generativelanguage.googleapis.com/v1beta/models/' +
@@ -2828,10 +2870,6 @@ function runCloudLLM(userText) {
   if (!ep) { llmSetStatus('Enter a base URL for the custom endpoint (or pick a provider).', 'error'); return; }
   if (!cfg.model) { llmSetStatus('Enter a model name (e.g. gpt-4o-mini).', 'error'); return; }
   if (!cfg.key && cfg.provider !== 'custom') { llmSetStatus('Enter your ' + cfg.provider + ' API key (saved only in this browser).', 'error'); return; }
-  if (cfg.provider === 'opencodego') {
-    llmSetStatus('OpenCode Go does not allow direct browser requests (no CORS headers on its API), so it cannot be used from a static page. Pick another provider.', 'error');
-    return;
-  }
 
   var job = { id: ++llmJobSeq, model: cfg.model, device: 'cloud:' + cfg.provider, cloud: true };
   llmCurrentJob = job;
@@ -2960,7 +2998,10 @@ function runLLM() {
   }
 
   if (aiMode === 'cloud') {
-    runCloudLLM(buildUserText(transcript));
+    var cloudPrompt = buildUserText(transcript);
+    lastSentPrompt = cloudPrompt;
+    $('copyPromptBtn').disabled = false;
+    runCloudLLM(cloudPrompt);
     return;
   }
 
@@ -2977,6 +3018,8 @@ function runLLM() {
     trimmed = true;
   }
   var userText = buildUserText(transcript);
+  lastSentPrompt = userText;
+  $('copyPromptBtn').disabled = false;
   var job = {
     id: ++llmJobSeq,
     model: model,
@@ -3173,6 +3216,22 @@ function cancelLLM() {
 
 $('llmBtn').addEventListener('click', runLLM);
 $('llmCancel').addEventListener('click', cancelLLM);
+$('copyPromptBtn').addEventListener('click', function () {
+  if (!lastSentPrompt) { llmSetStatus('Nothing to copy yet — generate once, then copy the exact prompt.', 'error'); return; }
+  function copied() { llmSetStatus('Prompt copied to clipboard (exactly as sent to the AI).', 'ok'); }
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(lastSentPrompt).then(copied, function () {
+      llmSetStatus('Copy failed — clipboard blocked by the browser.', 'error');
+    });
+  } else {
+    var ta = document.createElement('textarea');
+    ta.value = lastSentPrompt;
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); copied(); } catch (e) { llmSetStatus('Copy failed.', 'error'); }
+    ta.remove();
+  }
+});
 $('transcriptOut').addEventListener('input', updateLLMBtn);
 $('llmModel').addEventListener('change', function () { llmUserPickedModel = true; });
 

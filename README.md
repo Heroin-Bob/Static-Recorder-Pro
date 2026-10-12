@@ -35,11 +35,13 @@ The AI Co-Pilot has two modes, switched with a tab at the top of the AI panel:
 - Bring your own key from **OpenAI, Anthropic (Claude), Google Gemini, Groq, OpenRouter**, or a **Custom OpenAI-compatible endpoint** (LM Studio, Ollama, enterprise gateways, etc.).
 - Per-provider model dropdowns (e.g. `gemini-3.8-flash`, `claude-sonnet-4-5`, `gpt-4o-mini`), or type any model in Custom.
 - Responses **stream token-by-token**; the same prompt instruction, format reference, compaction, and presets apply.
+- A **Copy Prompt** button next to Cancel copies the exact prompt sent to the AI (instructions + reference + compacted transcript), so you can paste it into any other AI chat if you run out of tokens.
+- A link above the provider selector explains exactly what is sent to the third party, plus a step-by-step guide for creating a free Google Gemini API key.
 - No browser memory limits — full 128k+ context handling of long calls.
 
 > **Note:** the API key is stored only in the page's `localStorage` and is sent **directly** from your browser to the provider. Use a restricted/limited key — anyone with access to the device can read it.
 
-**Providers that are CORS-enabled** (work directly from a static page): OpenAI, Anthropic (via its browser-access header), Google Gemini, Groq, OpenRouter, and Custom endpoints that send CORS headers. **OpenCode Go is notably excluded** — its API sends no CORS headers, so it cannot be called from a static page; it must be used from the OpenCode app itself.
+**Providers** (all CORS-enabled, so they work directly from a static page): OpenAI, Anthropic (via its browser-access header), Google Gemini, Groq, OpenRouter, and Custom endpoints that send CORS headers. For a free start, Google Gemini offers a generous free tier — see the in-app "Need a free API key?" guide.
 
 ---
 
@@ -182,7 +184,7 @@ Timestamps are removed and consecutive same-speaker lines are merged — typical
 - **First local run downloads models.** Allow time; they're cached afterwards.
 - **Long calls + local mode:** browser memory limits the local path. Keep transcripts compact (the app does this automatically) or use **Cloud mode**, which handles full-length calls easily.
 - **Cloud keys are stored in the browser** — use a restricted key with a spend cap.
-- **OpenCode Go isn't supported from a static page** (no CORS); use it with the official OpenCode app.
+- **Free API key:** the in-app cloud popup walks through creating a free Google Gemini key (recommended provider: **Google Gemini**, recommended model: **gemini-3.1-flash-lite** — it has the most tokens on the free tier and works very well for call notes).
 - **Choose the right local model for your machine.** SmolLM2 360M for CPU-only machines; Qwen2.5 on WebGPU for best quality.
 
 ---
@@ -212,7 +214,7 @@ Timestamps are removed and consecutive same-speaker lines are merged — typical
 
 - **Small local models** are private but less capable than cloud LLMs — they can simplify nuance or follow formatting loosely.
 - **Local mode memory ceiling:** WebAssembly is 32-bit (~4 GB heap cap), so long conversations in local mode can hit ONNX "tensor too large" / out-of-memory errors. The app auto-falls back to CPU and smaller models, but **Cloud mode is the reliable route for long calls**.
-- **Cloud mode requires CORS-enabled providers** — OpenAI, Anthropic, Gemini, Groq, OpenRouter, and custom CORS-enabled endpoints work; others (e.g. OpenCode Go) don't.
+- **Cloud mode requires CORS-enabled providers** — OpenAI, Anthropic, Gemini, Groq, OpenRouter, and custom CORS-enabled endpoints all work.
 - Trimming/compaction helps the AI, but the visible transcript is never modified without your say-so.
 
 ---

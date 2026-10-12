@@ -9,6 +9,57 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<!-- SEO -->
+<meta name="keywords" content="call recorder, audio transcription, Whisper, speech to text, AI meeting notes, browser recorder, local AI, private transcription, WebGPU, WebAssembly, in-browser AI, system audio recorder, dictation">
+<meta name="author" content="Static Recorder Pro">
+<meta name="robots" content="index, follow">
+<meta name="theme-color" content="#090d16">
+<link rel="canonical" href="https://heroin-bob.github.io/Static-Recorder-Pro/">
+<link rel="apple-touch-icon" href="icon.svg">
+
+<!-- Open Graph (Facebook, LinkedIn, Slack, etc.) -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Static Recorder Pro">
+<meta property="og:title" content="Static Recorder Pro - Local Audio & AI Call Transcriber">
+<meta property="og:description" content="Record mic + system audio, transcribe locally with Whisper, and draft AI notes — 100% in your browser. Free, private, no server, optional cloud API.">
+<meta property="og:url" content="https://heroin-bob.github.io/Static-Recorder-Pro/">
+<meta property="og:image" content="https://heroin-bob.github.io/Static-Recorder-Pro/icon.svg">
+
+<!-- Twitter / X card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Static Recorder Pro - Local Audio & AI Call Transcriber">
+<meta name="twitter:description" content="Record mic + system audio, transcribe locally with Whisper, and draft AI notes — 100% in your browser. Free, private, no server, optional cloud API.">
+<meta name="twitter:image" content="https://heroin-bob.github.io/Static-Recorder-Pro/icon.svg">
+
+<!-- Structured data for rich search results -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Static Recorder Pro",
+  "url": "https://heroin-bob.github.io/Static-Recorder-Pro/",
+  "applicationCategory": "BusinessApplication",
+  "operatingSystem": "Web (Chrome, Edge, Firefox)",
+  "browserRequirements": "Requires a modern browser with JavaScript; WebGPU optional for GPU acceleration",
+  "description": "Free, private, in-browser call recorder and AI transcriber. Records microphone and system audio, transcribes locally with Whisper, and drafts notes, action items, and replies using local or cloud AI. No account or server required.",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "featureList": [
+    "Dual-track call recording (microphone + system audio)",
+    "Local Whisper speech-to-text transcription",
+    "In-browser AI note generation (WebGPU/WASM)",
+    "Optional cloud AI providers (OpenAI, Anthropic, Google Gemini, Groq, OpenRouter)",
+    "Audio file upload and transcription",
+    "Live waveform visualizer",
+    "Local-only storage with export"
+  ]
+}
+</script>
+
 <style>
   :root {
     --bg-dark: #090d16;
@@ -32,7 +83,7 @@
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background-color: var(--bg-dark);
-    background-image: 
+    background-image:
       radial-gradient(at 20% 15%, rgba(56, 189, 248, 0.05) 0px, transparent 50%),
       radial-gradient(at 80% 85%, rgba(168, 85, 247, 0.04) 0px, transparent 50%);
     color: var(--text-main);
@@ -93,7 +144,7 @@
     font-size: 0.75rem;
     color: var(--text-muted);
   }
-  
+
   .badges {
     display: flex;
     align-items: center;
@@ -901,10 +952,10 @@
   <!-- ===================== STUDIO WORKSPACE TAB ===================== -->
   <div class="tab-pane active" id="pane-recorder">
     <div class="studio-grid">
-      
+
       <!-- LEFT COLUMN: Capture & Model Controls -->
       <div class="studio-left">
-        
+
         <!-- Live Audio Recorder Card -->
         <div class="card">
           <div class="card-header">
@@ -1193,7 +1244,7 @@
 
           <div class="form-group">
             <label for="llmPrompt">AI Prompt Instruction</label>
-            
+
             <!-- Quick Preset Chips -->
             <div class="presets-row" id="presetsRow">
               <button type="button" class="preset-add" id="presetAdd" title="Add a custom AI prompt">+</button>
@@ -1241,7 +1292,7 @@
           <div class="rec-btns" style="margin-top:14px">
             <button type="button" id="llmBtn" class="btn-green" disabled>Generate with AI</button>
             <button type="button" id="llmCancel" class="btn-red" disabled>Cancel</button>
-            <button type="button" id="copyPromptBtn" class="btn" disabled title="Copy the exact prompt sent to the AI (instructions + reference + transcript)">Copy Prompt</button>
+            <button type="button" id="copyPromptBtn" class="btn" title="Copy the prompt (instructions + reference + transcript) — works before or after generating">Copy Prompt</button>
           </div>
 
           <div class="progress-wrap" id="llmProgressWrap" style="display:none">
@@ -1349,8 +1400,8 @@ function wavDurationSeconds(blob) {
 --------------------------------------------------------------------------- */
 function decodeAndResample16k(blob) {
   var ctx = new (window.AudioContext || window.webkitAudioContext)();
-  return blob.arrayBuffer().then(function (buf) { 
-    return ctx.decodeAudioData(buf); 
+  return blob.arrayBuffer().then(function (buf) {
+    return ctx.decodeAudioData(buf);
   }).then(function(audioBuffer) {
     if (ctx.close) ctx.close();
     var offlineCtx = new window.OfflineAudioContext(1, Math.ceil(audioBuffer.duration * 16000), 16000);
@@ -2065,8 +2116,8 @@ Recorder.init({
     });
   }
 });
-$('recStart').addEventListener('click', function () { 
-  Recorder.start(); 
+$('recStart').addEventListener('click', function () {
+  Recorder.start();
   detectDevice().then(function(dev) {
     var model = $('model').value;
     ensureWorkerMode().then(function(mode) {
@@ -2504,7 +2555,32 @@ var llmWorker = null, llmWorkerUrl = null, llmWorkerKey = null;
 var llmBusy = false, llmMode = null, llmAbort = false;
 var llmTokens = 0, llmStartTs = 0, llmTimer = null;
 var llmCurrentJob = null, llmJobSeq = 0;
-var lastSentPrompt = '';   // exact user message last sent to the AI (for Copy Prompt)
+
+/* Builds the exact user message that would be sent to the AI, from the current
+   transcript, instruction, and reference. Mirrors runLLM's compaction/trimming
+   so Copy Prompt works at any time (no generation required). */
+function currentPromptText() {
+  var transcript = $('transcriptOut').value.trim();
+  if (!transcript) return '';
+  var compacted = compactTranscript(transcript);
+  if (compacted) transcript = compacted;
+  var prompt = $('llmPrompt').value.trim() || 'Summarize this conversation.';
+  var ref = $('llmRef').value.trim();
+  if (aiMode === 'local') {
+    var maxChars = llmTranscriptBudget($('llmModel').value, 512);
+    if (transcript.length > maxChars) {
+      transcript = transcript.slice(0, maxChars) +
+        '\n\n[... transcript was too long for the selected model, so it was auto-trimmed to fit. ' +
+        'For the full call, split it into shorter parts or use a model with a longer context. ...]';
+    }
+  }
+  var ut = 'INSTRUCTIONS:\n' + prompt + '\n';
+  if (ref) {
+    ut += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' + ref + '\n';
+  }
+  ut += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\n' + transcript;
+  return ut;
+}
 var llmUserPickedModel = false;
 
 function llmDeviceNoteText(device) {
@@ -2993,15 +3069,12 @@ function runLLM() {
     if (ref) {
       ut += '\n===== EXAMPLE / REFERENCE - FORMAT ONLY; ITS CONTENT MUST BE IGNORED =====\n' + ref + '\n';
     }
-    ut += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS =====\n' + tr;
+    ut += '\n===== TRANSCRIPT - THE ACTUAL CALL; THIS IS THE ONLY SOURCE OF FACTS. THE TRANSCRIPT MAY BE SLIGHTLY OUT OF ORDER AND CONTAIN GRAMMATICAL ERRORS FROM THE AUTOMATED TRANSCRIPTION PROCESS. CONSIDER THE FULL CONTEXT OF THE TRANSCRIPT THEN EVALUATE ACCORDING TO THE INSTRUCTIONS AND ANY REFERENCE MATERIAL =====\n' + tr;
     return ut;
   }
 
   if (aiMode === 'cloud') {
-    var cloudPrompt = buildUserText(transcript);
-    lastSentPrompt = cloudPrompt;
-    $('copyPromptBtn').disabled = false;
-    runCloudLLM(cloudPrompt);
+    runCloudLLM(buildUserText(transcript));
     return;
   }
 
@@ -3018,8 +3091,6 @@ function runLLM() {
     trimmed = true;
   }
   var userText = buildUserText(transcript);
-  lastSentPrompt = userText;
-  $('copyPromptBtn').disabled = false;
   var job = {
     id: ++llmJobSeq,
     model: model,
@@ -3217,15 +3288,16 @@ function cancelLLM() {
 $('llmBtn').addEventListener('click', runLLM);
 $('llmCancel').addEventListener('click', cancelLLM);
 $('copyPromptBtn').addEventListener('click', function () {
-  if (!lastSentPrompt) { llmSetStatus('Nothing to copy yet — generate once, then copy the exact prompt.', 'error'); return; }
-  function copied() { llmSetStatus('Prompt copied to clipboard (exactly as sent to the AI).', 'ok'); }
+  var text = currentPromptText();
+  if (!text) { llmSetStatus('Nothing to copy — transcribe or paste a transcript first.', 'error'); return; }
+  function copied() { llmSetStatus('Prompt copied to clipboard (exactly as it is sent to the AI).', 'ok'); }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(lastSentPrompt).then(copied, function () {
+    navigator.clipboard.writeText(text).then(copied, function () {
       llmSetStatus('Copy failed — clipboard blocked by the browser.', 'error');
     });
   } else {
     var ta = document.createElement('textarea');
-    ta.value = lastSentPrompt;
+    ta.value = text;
     document.body.appendChild(ta);
     ta.select();
     try { document.execCommand('copy'); copied(); } catch (e) { llmSetStatus('Copy failed.', 'error'); }

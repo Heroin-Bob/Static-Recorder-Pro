@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://heroin-bob.github.io/Static-Recorder-Pro/sitemap.xml

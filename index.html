@@ -52,7 +52,7 @@
     "Dual-track call recording (microphone + system audio)",
     "Local Whisper speech-to-text transcription",
     "In-browser AI note generation (WebGPU/WASM)",
-    "Optional cloud AI providers (OpenAI, Anthropic, Google Gemini, Groq, OpenRouter)",
+    "Optional cloud AI providers (OpenAI, Anthropic, Google Gemini, Groq, OpenRouter, DeepSeek)",
     "Audio file upload and transcription",
     "Live waveform visualizer",
     "Local-only storage with export"
@@ -935,7 +935,7 @@
       </div>
       <div class="tab" data-tab="history">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
-        Call History
+        History
       </div>
     </div>
 
@@ -1222,6 +1222,7 @@
                   <option value="gemini">Google Gemini</option>
                   <option value="openrouter">OpenRouter</option>
                   <option value="groq">Groq</option>
+                  <option value="deepseek">DeepSeek</option>
                   <option value="custom">Custom (OpenAI-compatible)</option>
                 </select>
               </div>
@@ -2781,11 +2782,12 @@ try {
   }
 } catch (e) {}
 var CLOUD_MODELS = {
-  openai: ['gpt-4o-mini', 'gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o3-mini', 'o1'],
+  openai: ['gpt-6-astra', 'gpt-6.1-sol', 'gpt-6.1-sol-ultrafast', 'gpt-6-luna', 'gpt-6-sol', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4', 'gpt-5.4-pro', 'gpt-5.4-mini', 'gpt-5.4-nano', 'gpt-5.3-codex', 'gpt-5.2', 'gpt-5.2-pro', 'gpt-5.1', 'gpt-5', 'gpt-5-pro', 'gpt-5-mini', 'gpt-5-nano', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'gpt-4o', 'gpt-4o-mini', 'o3', 'o3-pro', 'o3-mini', 'o1', 'gpt-oss-120b', 'gpt-oss-20b', 'chat-latest', 'gpt-image-2.5-sunburst', 'gpt-image-2.5-flare', 'gpt-image-2', 'gpt-realtime', 'gpt-realtime-1.5', 'gpt-realtime-2', 'gpt-realtime-2.1', 'gpt-realtime-2.1-mini', 'gpt-realtime-mini', 'gpt-realtime-translate', 'gpt-realtime-whisper', 'gpt-audio', 'gpt-audio-1.5', 'gpt-transcribe', 'gpt-live-transcribe', 'gpt-4o-transcribe', 'gpt-4o-mini-transcribe', 'gpt-4o-transcribe-diarize', 'tts-1', 'tts-1-hd', 'whisper-1', 'omni-moderation-latest', 'text-embedding-3-large', 'text-embedding-3-small', 'text-embedding-ada-002'],
   anthropic: ['claude-sonnet-4-5', 'claude-haiku-4-5', 'claude-opus-4-1', 'claude-3-7-sonnet-latest', 'claude-3-5-haiku-latest'],
   gemini: ['gemini-3.8-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite', 'gemini-3.1-pro-preview', 'gemini-3-flash-preview', 'gemini-2.5-pro', 'gemini-2.5-flash'],
   openrouter: ['openai/gpt-4o-mini', 'openai/gpt-4o', 'anthropic/claude-sonnet-4-5', 'anthropic/claude-3.7-sonnet', 'google/gemini-2.5-flash', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct', 'mistralai/mistral-large-latest'],
   groq: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'llama3-70b-8192', 'mixtral-8x7b-32768', 'gemma2-9b-it', 'openai/gpt-oss-120b', 'qwen/qwen-2.5-32b'],
+  deepseek: ['deepseek-flash', 'deepseek-v4-pro'],
   custom: [],
 };
 var CLOUD_MAX_TOKENS = 1024;
@@ -2917,6 +2919,7 @@ function cloudEndpoint(cfg) {
     case 'openai':    return { url: 'https://api.openai.com/v1/chat/completions', style: 'openai' };
     case 'openrouter': return { url: 'https://openrouter.ai/api/v1/chat/completions', style: 'openai' };
     case 'groq':      return { url: 'https://api.groq.com/openai/v1/chat/completions', style: 'openai' };
+    case 'deepseek':  return { url: 'https://api.deepseek.com/v1/chat/completions', style: 'openai' };
     case 'anthropic': return { url: 'https://api.anthropic.com/v1/messages', style: 'anthropic' };
     case 'gemini':    return {
       url: 'https://generativelanguage.googleapis.com/v1beta/models/' +

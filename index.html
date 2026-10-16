@@ -560,9 +560,10 @@
     border-color: #a3e635;
   }
 
-  /* AI mode tabs (Local vs Cloud API) */
+  /* AI mode tabs (Local vs Cloud API vs ChatGPT) */
   .ai-mode-tabs {
     display: flex;
+    flex-wrap: wrap;
     gap: 6px;
     margin: 12px 0 14px;
   }
@@ -1118,6 +1119,7 @@
           <div class="ai-mode-tabs">
             <button type="button" class="ai-mode-tab active" id="aiModeLocal" data-mode="local">Local (In-Browser)</button>
             <button type="button" class="ai-mode-tab" id="aiModeCloud" data-mode="cloud">Cloud API</button>
+            <button type="button" class="ai-mode-tab" id="aiModeChatGPT" data-mode="chatgpt">ChatGPT Chat Send</button>
           </div>
 
           <div class="localai-info-wrap" id="aiLocalInfoWrap" style="display:none">
@@ -1241,6 +1243,12 @@
               <input id="cloudBase" type="text" placeholder="https://my-endpoint.example/v1" autocomplete="off" spellcheck="false">
             </div>
             <div class="hint">The key is saved only in this browser (localStorage) and sent directly from your browser to the provider. Use a restricted/limited key — anyone with access to this device can read it.</div>
+          </div>
+
+          <div id="aiChatGptPanel" style="display:none">
+            <div class="cloud-info-wrap">
+              <span class="hint">Opens <strong>chatgpt.com</strong> in a new tab as a <strong>temporary chat</strong> with this prompt (instructions + reference + transcript) pre-filled. Press Enter there to send — a static page can't click Send for you.</span>
+            </div>
           </div>
 
           <div class="form-group">
@@ -2773,7 +2781,10 @@ function finishLLM(result) {
 /* ---------- Cloud API mode (third-party LLM, direct from the browser) ---------- */
 var AI_MODE_KEY = 'aiMode', CLOUD_CFG_KEY = 'cloudCfg';
 var aiMode = 'local';
-try { aiMode = localStorage.getItem(AI_MODE_KEY) === 'cloud' ? 'cloud' : 'local'; } catch (e) {}
+try {
+  var _am = localStorage.getItem(AI_MODE_KEY);
+  aiMode = (_am === 'cloud' || _am === 'chatgpt') ? _am : 'local';
+} catch (e) {}
 var cloudCfg = { provider: 'openai', model: '', key: '', base: '' };
 try {
   var ccRaw = JSON.parse(localStorage.getItem(CLOUD_CFG_KEY) || '{}');
@@ -2835,22 +2846,27 @@ function applyCloudCfgToUI() {
   $('cloudBaseWrap').style.display = cloudCfg.provider === 'custom' ? '' : 'none';
 }
 function setAIMode(mode) {
-  aiMode = mode === 'cloud' ? 'cloud' : 'local';
+  aiMode = (mode === 'cloud' || mode === 'chatgpt') ? mode : 'local';
   try { localStorage.setItem(AI_MODE_KEY, aiMode); } catch (e) {}
   $('aiModeLocal').classList.toggle('active', aiMode === 'local');
   $('aiModeCloud').classList.toggle('active', aiMode === 'cloud');
+  $('aiModeChatGPT').classList.toggle('active', aiMode === 'chatgpt');
   $('aiLocalPanel').style.display = aiMode === 'local' ? '' : 'none';
   $('aiCloudPanel').style.display = aiMode === 'cloud' ? '' : 'none';
+  $('aiChatGptPanel').style.display = aiMode === 'chatgpt' ? '' : 'none';
   $('aiLocalInfoWrap').style.display = aiMode === 'local' ? '' : 'none';
+  $('llmBtn').textContent = aiMode === 'chatgpt' ? 'Send to ChatGPT Chat' : 'Generate with AI';
   var note = $('llmDeviceNote');
   if (note) {
     if (aiMode === 'cloud') note.textContent = 'Cloud API Mode';
+    else if (aiMode === 'chatgpt') note.textContent = 'ChatGPT Web Mode';
     else detectDevice().then(function (device) { note.textContent = llmDeviceNoteText(device); });
   }
   if (aiMode !== 'local') { $('localAiModal').style.display = 'none'; }
 }
 $('aiModeLocal').addEventListener('click', function () { setAIMode('local'); });
 $('aiModeCloud').addEventListener('click', function () { setAIMode('cloud'); });
+$('aiModeChatGPT').addEventListener('click', function () { setAIMode('chatgpt'); });
 
 /* "About local AI" popup: limits, best use, and CPU-mode fixes */
 var LOCAL_AI_FIXES = {
@@ -3048,6 +3064,14 @@ function runCloudLLM(userText) {
     .then(function () { cloudAbort = null; });
 }
 
+function sendToChatGPT(text) {
+  var url = 'https://chatgpt.com/?temporary-chat=true&prompt=' + encodeURIComponent(text);
+  var win = window.open(url, '_blank');
+  if (!win) { llmSetStatus('Pop-up blocked — allow pop-ups for this page, then try again.', 'error'); return; }
+  try { win.opener = null; } catch (e) {}
+  llmSetStatus('Opened a temporary ChatGPT chat in a new tab with the prompt pre-filled. Press Enter there to send.', 'ok');
+}
+
 function runLLM() {
   if (llmBusy) return;
   var transcript = $('transcriptOut').value.trim();
@@ -3078,6 +3102,10 @@ function runLLM() {
 
   if (aiMode === 'cloud') {
     runCloudLLM(buildUserText(transcript));
+    return;
+  }
+  if (aiMode === 'chatgpt') {
+    sendToChatGPT(buildUserText(transcript));
     return;
   }
 

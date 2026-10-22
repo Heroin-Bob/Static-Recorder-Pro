@@ -728,28 +728,32 @@
   }
   .localai-fix:empty { padding: 0; border: none; }
 
-  /* Rich AI output (styled to match the textarea boxes) */
+  /* Rich AI output (styled to match the prompt/reference textareas) */
   .rich-out {
-    white-space: pre-wrap;
+    white-space: normal;
     overflow: auto;
+    word-wrap: break-word;
     min-height: 200px;
     max-height: 420px;
-    line-height: 1.55;
-    font-size: 0.82rem;
-    font-family: 'JetBrains Mono', monospace;
-    background: rgba(9, 13, 22, 0.95);
+    line-height: 1.6;
+    font-size: 0.88rem;
+    font-family: inherit;
+    background: var(--bg-input);
     color: var(--text-main);
     border: 1px solid var(--border-color);
     border-radius: 10px;
     padding: 10px 12px;
+    transition: all 0.2s ease;
   }
-  .rich-out h3 { font-size: 1.02rem; margin: 10px 0 4px; color: var(--accent-cyan); }
-  .rich-out h4 { font-size: 0.96rem; margin: 8px 0 4px; color: var(--accent-cyan); }
-  .rich-out h5 { font-size: 0.92rem; margin: 8px 0 4px; color: var(--accent-cyan); }
+  .rich-out p { margin: 0 0 8px; }
+  .rich-out p:last-child { margin-bottom: 0; }
+  .rich-out h3 { font-size: 1.02rem; margin: 10px 0 6px; color: var(--accent-cyan); }
+  .rich-out h4 { font-size: 0.96rem; margin: 8px 0 6px; color: var(--accent-cyan); }
+  .rich-out h5 { font-size: 0.92rem; margin: 8px 0 6px; color: var(--accent-cyan); }
   .rich-out ul, .rich-out ol { margin: 6px 0; padding-left: 22px; }
   .rich-out li { margin: 2px 0; }
-  .rich-out strong { color: var(--text-main); font-weight: 700; }
-  .rich-out em { font-style: italic; }
+  .rich-out strong, .rich-out b { color: var(--text-main); font-weight: 700; }
+  .rich-out em, .rich-out i { font-style: italic; }
   .rich-out u { text-decoration: underline; }
 
   /* Modal */
@@ -2712,36 +2716,50 @@ function mdInline(s) {
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/__([^_]+)__/g, '<u>$1</u>');
 }
+/* Strips invisible/copy-breaking characters and normalizes line endings so the
+   rendered and copied text behaves predictably in rich-text fields. */
+function cleanLLMText(s) {
+  return String(s == null ? '' : s)
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/\u00A0/g, ' ');
+}
 function mdToHtml(md) {
-  var lines = String(md || '').split('\n');
-  var html = [], i = 0;
+  var lines = cleanLLMText(md).split('\n');
+  var html = [], para = [];
+  function flushPara() {
+    if (para.length) { html.push('<p>' + para.join('<br>') + '</p>'); para = []; }
+  }
+  var i = 0;
   while (i < lines.length) {
-    var line = lines[i];
-    var trimmed = line.trim();
-    if (!trimmed) {
-      if (html.length && html[html.length - 1] !== '') html.push('');  // one blank line, no stacking
-      i++; continue;
-    }
-    var h = line.match(/^(#{1,3})\s+(.*)$/);
+    var trimmed = lines[i].trim();
+    if (!trimmed) { flushPara(); i++; continue; }
+    var h = trimmed.match(/^(#{1,3})\s+(.*)$/);
     if (h) {
+      flushPara();
       var lvl = Math.min(5, h[1].length + 2);
       html.push('<h' + lvl + '>' + mdInline(h[2]) + '</h' + lvl + '>');
       i++; continue;
     }
-    if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
-      var ordered = /^\d+\.\s+/.test(line);
+    if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      flushPara();
+      var ordered = /^\d+\.\s+/.test(trimmed);
       var marker = ordered ? /^\d+\.\s+/ : /^[-*]\s+/;
       var items = [];
-      while (i < lines.length && marker.test(lines[i])) {
-        items.push('<li>' + mdInline(lines[i].replace(marker, '')) + '</li>');
+      while (i < lines.length) {
+        var l = lines[i].trim();
+        if (!(ordered ? /^\d+\.\s+/.test(l) : /^[-*]\s+/.test(l))) break;
+        items.push('<li>' + mdInline(l.replace(marker, '')) + '</li>');
         i++;
       }
       html.push('<' + (ordered ? 'ol' : 'ul') + '>' + items.join('') + '</' + (ordered ? 'ol' : 'ul') + '>');
       continue;
     }
-    html.push(mdInline(trimmed));
+    para.push(mdInline(trimmed));
     i++;
   }
+  flushPara();
   return html.join('\n');
 }
 function renderLLMOut() {
@@ -2930,6 +2948,7 @@ $('cloudModelCustom').addEventListener('input', saveCloudCfg);
 });
 
 var cloudAbort = null;   // AbortController for the active cloud request
+var cloudRetryTimer = null;   // pending auto-retry timer (busy/5xx)
 function cloudEndpoint(cfg) {
   switch (cfg.provider) {
     case 'openai':    return { url: 'https://api.openai.com/v1/chat/completions', style: 'openai' };
@@ -2979,7 +2998,7 @@ function runCloudLLM(userText) {
   $('llmProgressWrap').style.display = 'none';
   llmSetStatus('Sending request to ' + cfg.provider + ' (' + cfg.model + ')...', '');
   startLLMTimer();
-  cloudAbort = new AbortController();
+  if (cloudRetryTimer) { clearTimeout(cloudRetryTimer); cloudRetryTimer = null; }
 
   var headers = { 'Content-Type': 'application/json' };
   var body;
@@ -3005,63 +3024,87 @@ function runCloudLLM(userText) {
     };
   }
 
-  fetch(ep.url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: cloudAbort.signal })
-    .then(function (res) {
-      if (!res.ok) {
-        return res.text().then(function (t) { throw new Error('HTTP ' + res.status + ': ' + String(t).slice(0, 300)); });
-      }
-      if (!res.body) throw new Error('Streaming is not supported in this browser.');
-      var reader = res.body.getReader();
-      var decoder = new TextDecoder();
-      var buffer = '';
-      function handleLine(line) {
-        line = String(line || '').trim();
-        if (line.indexOf('data:') !== 0) return;
-        var payload = line.slice(5).trim();
-        if (!payload || payload === '[DONE]') return;
-        var evt;
-        try { evt = JSON.parse(payload); } catch (e2) { return; }
-        var txt = '';
-        if (ep.style === 'anthropic') {
-          if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) txt = evt.delta.text;
-        } else if (ep.style === 'gemini') {
-          var cand = evt.candidates && evt.candidates[0];
-          if (cand && cand.content && cand.content.parts) {
-            txt = cand.content.parts.map(function (p) { return p.text || ''; }).join('');
-          }
-        } else {
-          var ch = evt.choices && evt.choices[0];
-          if (ch && ch.delta && ch.delta.content) txt = ch.delta.content;
+  var attempt = 0;
+  function isRetryable(status) {
+    return status === 408 || status === 429 || (status >= 500 && status <= 599);
+  }
+
+  function attemptRequest() {
+    if (job.id !== llmJobSeq) return;
+    if (llmAbort) { finishLLM('cancelled'); return; }
+    attempt++;
+    cloudAbort = new AbortController();
+
+    fetch(ep.url, { method: 'POST', headers: headers, body: JSON.stringify(body), signal: cloudAbort.signal })
+      .then(function (res) {
+        if (!res.ok) {
+          return res.text().then(function (t) {
+            var e = new Error('HTTP ' + res.status + ': ' + String(t).slice(0, 300));
+            e.status = res.status;
+            throw e;
+          });
         }
-        if (txt) appendLLMToken(job.id, txt);
-      }
-      function pump() {
-        return reader.read().then(function (r) {
-          if (r.done) return;
-          buffer += decoder.decode(r.value, { stream: true });
-          var parts = buffer.split('\n');
-          buffer = parts.pop();
-          for (var i = 0; i < parts.length; i++) handleLine(parts[i]);
-          return pump();
-        });
-      }
-      return pump();
-    })
-    .then(function () {
-      if (job.id !== llmJobSeq) return;
-      finishLLM(llmAbort ? 'cancelled' : 'done');
-    })
-    .catch(function (err) {
-      if (job.id !== llmJobSeq) return;
-      if (err && err.name === 'AbortError') { finishLLM('cancelled'); return; }
-      finishLLM('error');
-      var cloudMsg = (err && err.message) || err;
-      if (err && err.name === 'TypeError') {
-        cloudMsg = 'The provider blocked the browser request (CORS). It may not allow direct calls from a static page.';
-      }
-      llmSetStatus('Cloud AI request failed: ' + cloudMsg, 'error');
-    })
-    .then(function () { cloudAbort = null; });
+        if (!res.body) throw new Error('Streaming is not supported in this browser.');
+        llmSetStatus('Generating response from ' + cfg.provider + ' (' + cfg.model + ')...', '');
+        var reader = res.body.getReader();
+        var decoder = new TextDecoder();
+        var buffer = '';
+        function handleLine(line) {
+          line = String(line || '').trim();
+          if (line.indexOf('data:') !== 0) return;
+          var payload = line.slice(5).trim();
+          if (!payload || payload === '[DONE]') return;
+          var evt;
+          try { evt = JSON.parse(payload); } catch (e2) { return; }
+          var txt = '';
+          if (ep.style === 'anthropic') {
+            if (evt.type === 'content_block_delta' && evt.delta && evt.delta.text) txt = evt.delta.text;
+          } else if (ep.style === 'gemini') {
+            var cand = evt.candidates && evt.candidates[0];
+            if (cand && cand.content && cand.content.parts) {
+              txt = cand.content.parts.map(function (p) { return p.text || ''; }).join('');
+            }
+          } else {
+            var ch = evt.choices && evt.choices[0];
+            if (ch && ch.delta && ch.delta.content) txt = ch.delta.content;
+          }
+          if (txt) appendLLMToken(job.id, txt);
+        }
+        function pump() {
+          return reader.read().then(function (r) {
+            if (r.done) return;
+            buffer += decoder.decode(r.value, { stream: true });
+            var parts = buffer.split('\n');
+            buffer = parts.pop();
+            for (var i = 0; i < parts.length; i++) handleLine(parts[i]);
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .then(function () {
+        if (job.id !== llmJobSeq) return;
+        finishLLM(llmAbort ? 'cancelled' : 'done');
+      })
+      .catch(function (err) {
+        if (job.id !== llmJobSeq) return;
+        if (err && err.name === 'AbortError') { finishLLM('cancelled'); return; }
+        if (llmAbort) { finishLLM('cancelled'); return; }
+        if (err && isRetryable(err.status)) {
+          llmSetStatus('Provider is busy (HTTP ' + err.status + '). Retrying in 3s — attempt ' + attempt + '...', '');
+          cloudRetryTimer = setTimeout(attemptRequest, 3000);
+          return;
+        }
+        finishLLM('error');
+        var cloudMsg = (err && err.message) || err;
+        if (err && err.name === 'TypeError') {
+          cloudMsg = 'The provider blocked the browser request (CORS). It may not allow direct calls from a static page.';
+        }
+        llmSetStatus('Cloud AI request failed: ' + cloudMsg, 'error');
+      })
+      .then(function () { cloudAbort = null; });
+  }
+  attemptRequest();
 }
 
 function sendToChatGPT(text) {
@@ -3306,6 +3349,7 @@ function cancelLLM() {
   }
   if (llmMode === 'cloud') {
     llmAbort = true;
+    if (cloudRetryTimer) { clearTimeout(cloudRetryTimer); cloudRetryTimer = null; }
     if (cloudAbort) {
       try { cloudAbort.abort(); } catch (e) {}
     }
@@ -3475,34 +3519,35 @@ window.addEventListener('blur', hideMenu);
 document.addEventListener('scroll', hideMenu, true);
 
 $('copyLlm').addEventListener('click', function () {
-  var el = $('llmOut');
-  var range = document.createRange();
-  range.selectNodeContents(el);
-  var sel = window.getSelection();
-  sel.removeAllRanges();
-  sel.addRange(range);
-  var ok = false;
-  try { ok = document.execCommand('copy'); } catch (e) {}
-  sel.removeAllRanges();
-  if (ok || !llmRaw) {
-    llmSetStatus(ok ? 'AI response copied (with formatting). Paste it into a rich-text field.' : 'Copy failed.', ok ? 'ok' : 'error');
-    return;
+  var text = cleanLLMText(llmRaw);
+  if (!text) { llmSetStatus('No AI response to copy yet.', 'error'); return; }
+  var html = mdToHtml(text);
+  function copied() { llmSetStatus('AI response copied (with formatting). Paste it into a rich-text field.', 'ok'); }
+  function fallback() {
+    var el = $('llmOut');
+    var range = document.createRange();
+    range.selectNodeContents(el);
+    var sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    sel.removeAllRanges();
+    if (ok) copied(); else llmSetStatus('Copy failed — clipboard blocked by the browser.', 'error');
   }
-  try {
-    navigator.clipboard.write([new ClipboardItem({
-      'text/html': new Blob([mdToHtml(llmRaw)], { type: 'text/html' }),
-      'text/plain': new Blob([llmRaw], { type: 'text/plain' })
-    })]).then(function () {
-      llmSetStatus('AI response copied (with formatting). Paste it into a rich-text field.', 'ok');
-    }, function (copyErr) {
-      llmSetStatus('Could not copy: ' + ((copyErr && copyErr.message) || 'clipboard error'), 'error');
-    });
-  } catch (e2) {
-    llmSetStatus('Copy failed: clipboard API unavailable.', 'error');
+  if (navigator.clipboard && navigator.clipboard.write && window.ClipboardItem) {
+    try {
+      navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })]).then(copied, fallback);
+      return;
+    } catch (e) { /* fall through to selection copy */ }
   }
+  fallback();
 });
 $('downloadLlm').addEventListener('click', function () {
-  if (llmRaw) downloadBlob(new Blob([llmRaw], { type: 'text/plain' }), 'ai-response-' + tsNowStamp() + '.txt');
+  if (llmRaw) downloadBlob(new Blob([cleanLLMText(llmRaw)], { type: 'text/plain' }), 'ai-response-' + tsNowStamp() + '.txt');
 });
 
 /* Formatting toolbar on the note template (inserts markdown markers) */

@@ -94,6 +94,52 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Non-Chromium warning banner (drops down after load) */
+  #browserBanner {
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transform: translateY(-100%);
+    transition: max-height 0.5s ease, opacity 0.5s ease, transform 0.5s ease, padding 0.5s ease;
+    background: linear-gradient(90deg, #991b1b, #dc2626);
+    color: #ffffff;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    padding: 0 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  }
+  #browserBanner.show {
+    max-height: 200px;
+    opacity: 1;
+    transform: translateY(0);
+    padding: 8px 16px;
+  }
+  #browserBanner .browser-banner-inner {
+    max-width: 1380px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    text-align: center;
+  }
+  #browserBanner strong { color: #ffffff; }
+  #browserBannerClose {
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+    font-size: 1.05rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  #browserBannerClose:hover { background: rgba(255, 255, 255, 0.32); }
+
   /* Sticky Top Header Navigation */
   header.app-header {
     position: sticky;
@@ -919,6 +965,14 @@
 </style>
 </head>
 <body>
+
+<!-- Non-Chromium browser warning (hidden by default, shown via JS) -->
+<div id="browserBanner" role="alert">
+  <div class="browser-banner-inner">
+    <span><strong>Heads-up:</strong> this app works best in a Chromium-based browser &mdash; Google Chrome, Microsoft Edge, Brave, Opera, or Vivaldi. Some features (especially the transcriber) may not work correctly in your current browser.</span>
+    <button type="button" id="browserBannerClose" aria-label="Dismiss warning">&times;</button>
+  </div>
+</div>
 
 <!-- App Header Navigation -->
 <header class="app-header">
@@ -3849,6 +3903,27 @@ $('historyClear').addEventListener('click', function () {
     setStatus('All local recordings cleared.', 'ok');
   });
 });
+
+/* ---------- Non-Chromium browser warning ---------- */
+(function () {
+  function isChromium() {
+    try {
+      var brands = navigator.userAgentData && navigator.userAgentData.brands;
+      if (brands && brands.length && brands.some(function (b) { return /Chromium/i.test(b.brand); })) return true;
+    } catch (e) {}
+    var ua = navigator.userAgent || '';
+    if (/iPhone|iPad|iPod/i.test(ua)) return false; // all iOS browsers use WebKit
+    return /(Chrome|Chromium|CriOS|Edg|EdgA|OPR|Brave|Vivaldi)/i.test(ua) && !/Firefox|FxiOS/i.test(ua);
+  }
+  if (isChromium()) return;
+  var banner = document.getElementById('browserBanner');
+  if (!banner) return;
+  function reveal() { setTimeout(function () { banner.classList.add('show'); }, 400); }
+  if (document.readyState === 'complete') reveal();
+  else window.addEventListener('load', reveal);
+  var close = document.getElementById('browserBannerClose');
+  if (close) close.addEventListener('click', function () { banner.classList.remove('show'); });
+})();
 
 /* ---------- Init ---------- */
 applyCloudCfgToUI();

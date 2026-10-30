@@ -1016,6 +1016,10 @@
 
           <div id="recAfter" style="display:none; margin-top: 14px;">
             <div id="recFiles"></div>
+            <div id="recCombine" style="display:none; margin-top: 10px;">
+              <button type="button" id="recCombineBtn" class="mini">Combine Tracks into One Audio</button>
+              <div id="recCombined" style="margin-top: 10px;"></div>
+            </div>
             <div class="hint" id="recSavedNote" style="display:none; margin-top: 8px;">Saved locally in IndexedDB storage.</div>
           </div>
           </div>
@@ -1469,6 +1473,75 @@ function wavToF32(blob) {
   return decodeAndResample16k(blob);
 }
 
+/* Read PCM samples from a 16 kHz mono PCM16 WAV without re-normalizing, so
+   layered tracks keep their relative volume. Falls back to decode+resample. */
+function wavPcmToF32(blob) {
+  return blob.arrayBuffer().then(function (buf) {
+    var view = new DataView(buf);
+    if (buf.byteLength < 44 || view.getUint32(0, false) !== 0x52494646) {
+      return decodeAndResample16k(blob);
+    }
+    var off = 12, dataOff = -1, dataLen = 0;
+    while (off + 8 <= buf.byteLength) {
+      var id = String.fromCharCode(view.getUint8(off), view.getUint8(off + 1), view.getUint8(off + 2), view.getUint8(off + 3));
+      var size = view.getUint32(off + 4, true);
+      if (id === 'data') { dataOff = off + 8; dataLen = size; break; }
+      off += 8 + size + (size & 1);
+    }
+    if (dataOff < 0) return decodeAndResample16k(blob);
+    var n = Math.floor(Math.min(dataLen, buf.byteLength - dataOff) / 2);
+    var out = new Float32Array(n);
+    for (var i = 0; i < n; i++) out[i] = view.getInt16(dataOff + i * 2, true) / 32768;
+    return out;
+  });
+}
+
+/* Layer WAV blobs on top of each other into a single 16 kHz mono WAV. */
+function combineTrackBlobs(blobs) {
+  return Promise.all(blobs.map(wavPcmToF32)).then(function (arrs) {
+    var len = 0;
+    arrs.forEach(function (a) { if (a.length > len) len = a.length; });
+    var out = new Float32Array(len);
+    for (var i = 0; i < len; i++) {
+      var v = 0;
+      for (var t = 0; t < arrs.length; t++) { if (i < arrs[t].length) v += arrs[t][i]; }
+      out[i] = v;
+    }
+    var peak = 0;
+    for (var j = 0; j < len; j++) { var x = Math.abs(out[j]); if (x > peak) peak = x; }
+    if (peak > 1) { var s = 0.98 / peak; for (var k = 0; k < len; k++) out[k] *= s; }
+    return encodeWav(out);
+  });
+}
+
+/* Render a playable + downloadable combined track inside a container. */
+function renderCombinedAudio(container, blob, filename) {
+  if (container._combinedUrl) { try { URL.revokeObjectURL(container._combinedUrl); } catch (e) {} }
+  container.innerHTML = '';
+  var row = document.createElement('div');
+  row.className = 'file-item';
+  var n = document.createElement('span');
+  n.className = 'fname';
+  n.textContent = 'Combined conversation:';
+  var sz = document.createElement('span');
+  sz.className = 'fsize';
+  sz.textContent = (blob.size / 1048576).toFixed(2) + ' MB';
+  var c = document.createElement('span');
+  c.className = 'fcontrols';
+  var audio = document.createElement('audio');
+  audio.controls = true;
+  var url = URL.createObjectURL(blob);
+  audio.src = url;
+  container._combinedUrl = url;
+  var save = document.createElement('button');
+  save.className = 'mini';
+  save.textContent = 'Save WAV';
+  save.onclick = function () { downloadBlob(blob, filename); };
+  c.appendChild(audio); c.appendChild(save);
+  row.appendChild(n); row.appendChild(sz); row.appendChild(c);
+  container.appendChild(row);
+}
+
 /* ---------------------------------------------------------------------------
    Storage (IndexedDB with in-memory fallback)
 --------------------------------------------------------------------------- */
@@ -1655,6 +1728,8 @@ var Recorder = (function () {
     $('recStart').disabled = true; $('recStop').disabled = false;
     $('recAfter').style.display = 'none';
     $('recFiles').innerHTML = '';
+    $('recCombine').style.display = 'none';
+    $('recCombined').innerHTML = '';
     $('recSavedNote').style.display = 'none';
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       onStatus('This browser does not support media capture. Try Chrome/Edge/Firefox.', 'error');
@@ -2107,6 +2182,31 @@ Recorder.init({
       $('recFiles').appendChild(d);
       idx++;
     });
+
+    var combineWrap = $('recCombine');
+    var combineBtn = $('recCombineBtn');
+    var combinedBox = $('recCombined');
+    combinedBox.innerHTML = '';
+    if (tracks.input && tracks.output) {
+      combineWrap.style.display = 'block';
+      combineBtn.disabled = false;
+      combineBtn.textContent = 'Combine Tracks into One Audio';
+      combineBtn.onclick = function () {
+        combineBtn.disabled = true;
+        combineBtn.textContent = 'Combining…';
+        combineTrackBlobs([tracks.input.blob, tracks.output.blob]).then(function (blob) {
+          renderCombinedAudio(combinedBox, blob, 'combined-call-' + tsNowStamp() + '.wav');
+          combineBtn.textContent = 'Recombine Tracks';
+          combineBtn.disabled = false;
+        }).catch(function (err) {
+          combineBtn.disabled = false;
+          combineBtn.textContent = 'Combine Tracks into One Audio';
+          recSetStatus('Could not combine audio: ' + ((err && err.message) || err), 'error');
+        });
+      };
+    } else {
+      combineWrap.style.display = 'none';
+    }
     $('recAfter').style.display = 'block';
 
     var duration = tracks.input ? wavDurationSeconds(tracks.input.blob) :
@@ -3674,6 +3774,33 @@ function renderHistItem(rec, transcript) {
       actions.appendChild(mkHistBtn('Save Caller (.wav)', '', function () { downloadBlob(rec.tracks.output.blob, rec.tracks.output.name); }));
     }
   }
+  var combinedBox = null;
+  var combineSources = [];
+  var combineLabel = 'Combine Tracks';
+  if (rec.uploads && rec.uploads.length) {
+    if (rec.uploads.length >= 2) {
+      combineSources = rec.uploads.map(function (u) { return u.blob; });
+      combineLabel = 'Combine Files';
+    }
+  } else if (rec.tracks && rec.tracks.input && rec.tracks.output) {
+    combineSources = [rec.tracks.input.blob, rec.tracks.output.blob];
+  }
+  if (combineSources.length >= 2) {
+    combinedBox = document.createElement('div');
+    actions.appendChild(mkHistBtn(combineLabel, '', function () {
+      var btn = this;
+      btn.disabled = true;
+      btn.textContent = 'Combining…';
+      combineTrackBlobs(combineSources).then(function (blob) {
+        renderCombinedAudio(combinedBox, blob, 'combined-' + rec.id + '.wav');
+        btn.textContent = 'Combined';
+      }).catch(function (err) {
+        btn.disabled = false;
+        btn.textContent = combineLabel;
+        alert('Could not combine audio: ' + ((err && err.message) || err));
+      });
+    }));
+  }
   actions.appendChild(mkHistBtn('Transcribe Audio', 'green', function () {
     latestRecordingId = rec.id;
     setTab('recorder');
@@ -3698,6 +3825,7 @@ function renderHistItem(rec, transcript) {
     });
   }));
   item.appendChild(actions);
+  if (combinedBox) item.appendChild(combinedBox);
 
   if (transcript && transcript.text) {
     var tb = document.createElement('div');
